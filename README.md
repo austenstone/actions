@@ -44,6 +44,7 @@ If you need to quickly perform a GitHub task this is the easiest way to do it!
 
 <details>
   <summary>Comment on an issue</summary>
+  
 ```yml
 on:
   issues:
@@ -106,6 +107,7 @@ This action makes it easy to quickly write a script in your workflow that uses t
 
 <details>
   <summary>Welcome a first-time contributor</summary>
+
 ```yml
 on: pull_request_target
 
@@ -149,6 +151,7 @@ jobs:
 
 <details>
   <summary>Download data from a URL</summary>
+
 ```yml
 on: pull_request
 
