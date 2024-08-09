@@ -28,13 +28,22 @@
 
 ## How to Author Workflow Files
 
+### The Developer Loop: Writing, Testing, Debugging
+
+Writing a workflow file is as simple as creating a `.yml` file in the `.github/workflows` directory of your repository.
+
+To test your workflow file you will push it to your repository and navigate to the Actions tab to see the status of your workflow run.
+
+When the workflow run is complete you can view the logs of each step to see what happened.
+
 ### GitHub CLI
 
-The GitHub CLI brings GitHub to the terminal. It's also pre-installed on every single GitHub runner!
+The GitHub CLI brings GitHub to the terminal. It's also preinstalled on all GitHub runners!
 
 If you need to quickly perform a GitHub task this is the easiest way to do it!
 
-# 
+<details>
+  <summary>Comment on an issue</summary>
 ```yml
 on:
   issues:
@@ -49,11 +58,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE: ${{ github.event.issue.html_url }}
 ```
+</details>
+
+For the list of available extensions for the gh cli, see the topic [`gh-extension`](https://github.com/topics/gh-extension).
 
 [Install](https://cli.github.com/)
 [Manual](https://cli.github.com/manual/)
+[Using GitHub CLI in workflows](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/using-github-cli-in-workflows)
 
-### VS Code Extension
+### VS Code extension
+
+There is a VS Code extension that provides syntax highlighting, intellisense, and more! This is a must have when authoring workflows.
+
+[GitHub Actions Extension](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-github-actions)
 
 ### Copilot
 
@@ -65,9 +82,9 @@ jobs:
 
 ### Github-script
 
-### Developer Loop: Writing, Testing, Debugging
-
 ### Expressions
+
+[Expressions](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions)
 
 ## How to Trigger/Initiate Workflow Runs
 
@@ -108,6 +125,10 @@ jobs:
 ### Conditional Jobs/Steps
 
 ### Permissions for Jobs
+
+There is a default token called `GITHUB_TOKEN`.
+
+[Assigning permissions to jobs](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/assigning-permissions-to-jobs)
 
 ## How to Use and Create Actions (Marketplace)
 
