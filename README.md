@@ -28,7 +28,30 @@
 
 ## How to Author Workflow Files
 
-### GitHub CLI: Every Runner Pre-loaded with it
+### GitHub CLI
+
+The GitHub CLI brings GitHub to the terminal. It's also pre-installed on every single GitHub runner!
+
+If you need to quickly perform a GitHub task this is the easiest way to do it!
+
+# 
+```yml
+on:
+  issues:
+    types:
+      - opened
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh issue comment $ISSUE --body "Thank you for opening this issue!"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.html_url }}
+```
+
+[Install](https://cli.github.com/)
+[Manual](https://cli.github.com/manual/)
 
 ### VS Code Extension
 
