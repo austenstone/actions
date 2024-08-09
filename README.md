@@ -72,6 +72,8 @@ There is a VS Code extension that provides syntax highlighting, intellisense, an
 
 [GitHub Actions Extension](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-github-actions)
 
+![alt text](image.png)
+
 ### Copilot
 
 ### Actions Loves JavaScript
