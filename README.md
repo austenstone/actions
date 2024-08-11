@@ -44,7 +44,7 @@ If you need to quickly perform a GitHub task this is the easiest way to do it!
 
 <details>
   <summary>Comment on an issue</summary>
-  
+
 ```yml
 on:
   issues:
@@ -91,15 +91,6 @@ The GitHub Actions ToolKit provides a set of packages to make creating actions e
 
 * [Actions Toolkit](https://github.com/actions/toolkit?tab=readme-ov-file#readme)
 * [Creating a JavaScript action](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
-
-### Custom Actions
-
-There are three types of custom actions:
-* [JavaScript](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
-* [Docker](https://docs.github.com/en/actions/creating-actions/creating-a-docker-container-action) (Not available on macOS or Windows runners)
-* [Composite](https://docs.github.com/en/actions/creating-actions/creating-a-composite-run-steps-action)
-
-* [About custom actions](https://docs.github.com/en/actions/creating-actions/about-custom-actions)
 
 ### Github-script
 
@@ -170,21 +161,142 @@ jobs:
 
 ### Expressions
 
+You can use expressions to programmatically set environment variables in workflow files and access contexts. An expression can be any combination of literal values, references to a context, or functions. You can combine literals, context references, and functions using operators. For more information about contexts, see "Contexts."
+
 [Expressions](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions)
 
 ## How to Trigger/Initiate Workflow Runs
 
-### Summary of Event Grid That Triggers Workflows
+You can configure your workflows to run when specific activity on GitHub happens, at a scheduled time, or when an event outside of GitHub occurs.
+
+* [Events that trigger workflows](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows)
+
+<!-- ### Summary of Event Grid That Triggers Workflows -->
 
 ### Configuring Input (Activity Types): Conditionally Trigger
 
-### Event: Workflow Dispatch + Inputs and Outputs
+### Event: Workflow Dispatch
+
+Workflows triggered by `workflow_dispatch` and `workflow_call` access their inputs using the inputs context.
+
+For workflows triggered by `workflow_dispatch` inputs are available in the `github.event.inputs`. 
+
+<details>
+  <summary>Example of on.workflow_dispatch.inputs</summary>
+
+```yml
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+        type: choice
+        options:
+        - info
+        - warning
+        - debug
+      tags:
+        description: 'Test scenario tags'
+        required: false
+        type: boolean
+      environment:
+        description: 'Environment to run tests against'
+        type: environment
+        required: true
+
+jobs:
+  log-the-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Log level: $LEVEL"
+          echo "Tags: $TAGS"
+          echo "Environment: $ENVIRONMENT"
+        env:
+          LEVEL: ${{ inputs.logLevel }}
+          TAGS: ${{ inputs.tags }}
+          ENVIRONMENT: ${{ inputs.environment }}
+```
+
+* [`workflow_dispatch` event](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_dispatch)
+* [`inputs` context](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/contexts#inputs-context)
+
+### Event: Workflow Call
+Workflows triggered by `workflow_call` access their inputs using the `inputs` context.
+
+<details>
+  <summary>Example of on.workflow_call.outputs</summary>
+
+```yml
+on:
+  workflow_call:
+    # Map the workflow outputs to job outputs
+    outputs:
+      workflow_output1:
+        description: "The first job output"
+        value: ${{ jobs.my_job.outputs.job_output1 }}
+      workflow_output2:
+        description: "The second job output"
+        value: ${{ jobs.my_job.outputs.job_output2 }}
+```
+</details>
+
+* [`workflow_call` event](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#workflow_call)
+* [`inputs` context](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/contexts#inputs-context)
 
 ### Event: Workflow Run
 
+The `workflow_run` event allows you to execute a workflow based on execution or completion of another workflow.
+
+<details>
+  <summary>Running a workflow based on the conclusion of another workflow</summary>
+
+```yml
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+
+jobs:
+  on-success:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - run: echo 'The triggering workflow passed'
+  on-failure:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - run: echo 'The triggering workflow failed'
+```
+</details>
+
 ### Event: Schedule
 
+The `schedule` event allows you to trigger a workflow at a scheduled time.
+
+<details>
+  <summary>Running a workflow on a schedule</summary>
+
+```yml
+on:
+  schedule:
+    # * is a special character in YAML so you have to quote this string
+            ┌───────────── minute (0 - 59)
+            │ ┌───────────── hour (0 - 23)
+            │ │ ┌───────────── day of the month (1 - 31)
+            │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+            │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+            │ │ │ │ │
+            │ │ │ │ │
+            │ │ │ │ │
+    - cron: * * * * *
+```
+
 ### Non-Core CI/CD Use Cases
+
 
 ### Concurrency: Order of Workflow Runs Based on When Trigger Happened
 
@@ -220,15 +332,41 @@ There is a default token called `GITHUB_TOKEN`.
 
 ### What is an Action?
 
+Actions are the building blocks that power your workflow. A workflow can contain one or more actions, either as individual steps or as part of an action group. An action is a reusable unit of code that can be used in multiple workflows. You can create your own actions, use actions created by the GitHub community, or use a combination of both.
+
+* [GitHub Actions Marketplace](https://github.com/marketplace?type=actions)
+
 ### Types of Actions
 
-### Action Outputs
+Javascript actions are the most popular and easiest to get started with, Docker containers package the environment with the GitHub Actions code, and Composite actions are a way to reuse actions in a more modular way.
+
+There are three types of custom actions:
+* [JavaScript](https://docs.github.com/en/actions/creating-actions/creating-a-javascript-action)
+* [Docker](https://docs.github.com/en/actions/creating-actions/creating-a-docker-container-action) (Not available on macOS or Windows runners)
+* [Composite](https://docs.github.com/en/actions/creating-actions/creating-a-composite-run-steps-action)
+* [About custom actions](https://docs.github.com/en/actions/creating-actions/about-custom-actions)
 
 ### Securing Usage of Actions
 
+* [Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions)
+
 ### Creating Your Own Actions
 
+You can create your own actions to use in your workflows. This is a great way to encapsulate logic that you want to reuse across multiple workflows.
+
+* [Creating actions](https://docs.github.com/en/actions/creating-actions)
+
 ### Cool Actions to Look Out For: github-script, Anything by GitHub, Major Cloud Providers, Terraform, Docker
+
+Here are some popular actions to get you started:
+
+* [GitHub Script](https://github.com/actions/github-script)
+* [Awesome Actions](https://github.com/sdras/awesome-actions#readme)
+* [GitHub Authored Actions](https://github.com/marketplace?query=publisher%3Aactions)
+* [Azure Actions](https://github.com/marketplace?query=publisher%3Aazure)
+* [AWS Actions](https://github.com/marketplace?query=publisher%3Aaws-actions)
+* [GCP Actions](https://github.com/marketplace?query=publisher%3Agoogle-github-actions)
+* [Build and Push Docker Images](https://github.com/marketplace/actions/build-and-push-docker-images)
 
 ## How to Organize, Share, and Scale Workflows
 
