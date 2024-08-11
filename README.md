@@ -295,6 +295,7 @@ on:
             │ │ │ │ │
     - cron: * * * * *
 ```
+</details>
 
 ### Non-Core CI/CD Use Cases
 
