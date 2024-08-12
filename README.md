@@ -52,9 +52,11 @@ You can run your jobs on GitHub Hosted compute or you can host your own Self Hos
 The standard runners GitHub offers are:
 * `ubuntu-latest`
 * `windows-latest`
-* `macos-latest` 
+* `macos-latest`
 
 There are also [Larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners/about-larger-runners#specifications-for-general-larger-runners)" for more demanding use cases.
+
+* [About Larger Runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners)
 
 #### Cost
 
@@ -65,7 +67,16 @@ For private repositories, GitHub charges based on a [per-minute rate](https://do
 > [!TIP]
 > GitHub always rounds up the time that a job runs to the nearest minute. For example, if your job runs for 61 seconds, GitHub will charge you for 2 minutes.
 
-* [About Larger Runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners)
+GitHub Plans get a certain number of included minutes per month:
+
+* Free: 2,000
+* Team: 3,000
+* Enterprise: 50,000
+
+> [!WARNING]
+> These minutes are ONLY applicable to standard runners (not larger runners). The above values are for `ubuntu-latest` runners. `windows-latest` are 2x the cost (25k free) and `macos-latest` are 10x the cost (5k free).
+
+![alt text](images/Screenshot%202024-08-12%20at%2010.33.53 AM.png)
 
 ### Autoscaling with self-hosted runners (ARC)
 
