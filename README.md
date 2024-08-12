@@ -74,7 +74,7 @@ You can automatically increase or decrease the number of self-hosted runners in 
 * [Autoscaling with self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners)
 * [actions-runner-controller](https://github.com/actions/actions-runner-controller)
 
-## GitHub Actions Ethos
+<!-- ## GitHub Actions Ethos
 
 ### Essence/Opinionation
 
@@ -88,7 +88,7 @@ You can automatically increase or decrease the number of self-hosted runners in 
 
 ### Easy to Get Started
 
-## How to Author Workflow Files
+## How to Author Workflow Files -->
 
 ### The Developer Loop: Writing, Testing, Debugging
 
