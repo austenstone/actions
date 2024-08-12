@@ -239,7 +239,72 @@ jobs:
 
 You can use expressions to programmatically set environment variables in workflow files and access contexts. An expression can be any combination of literal values, references to a context, or functions. You can combine literals, context references, and functions using operators. For more information about contexts, see "Contexts."
 
+#### Literals
+
+You can use boolean, null, number, or string data types.
+
+<details>
+  <summary>Example of literals</summary>
+
+```yml
+env:
+  myNull: ${{ null }}
+  myBoolean: ${{ false }}
+  myIntegerNumber: ${{ 711 }}
+  myFloatNumber: ${{ -9.2 }}
+  myHexNumber: ${{ 0xff }}
+  myExponentialNumber: ${{ -2.99e-2 }}
+  myString: Mona the Octocat
+  myStringInBraces: ${{ 'It''s open source!' }}
+```
+</details>
+
+#### Operators
+
+<details>
+  <summary>Example of operators</summary>
+
+```
+Operator	Description
+( )	Logical grouping
+[ ]	Index
+.	Property de-reference
+!	Not
+<	Less than
+<=	Less than or equal
+>	Greater than
+>=	Greater than or equal
+==	Equal
+!=	Not equal
+&&	And
+||	Or
+```
+</details>
+
+> [!TIP]
+> You can use a ternary operator `condition ? true : false` as `${{ condition && true || false }}`.
+
 [Expressions](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions)
+
+#### Functions
+
+You can use functions to transform data or to perform operations.
+
+* [contains](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#contains)
+* [startswith](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#startswith)
+* [endsWith](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#endswith)
+* [format](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#format)
+* [join](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#join)
+* [toJson](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#tojson)
+* [fromJson](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#fromjson)
+* [hashFiles](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#hashfiles)
+
+#### Status Check functions
+
+* [success](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#success)
+* [always](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#always)
+* [cancelled](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#cancelled)
+* [failure](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/expressions#failure)
 
 ## How to Trigger/Initiate Workflow Runs
 
@@ -249,7 +314,7 @@ You can configure your workflows to run when specific activity on GitHub happens
 
 <!-- ### Summary of Event Grid That Triggers Workflows -->
 
-### Configuring Input (Activity Types): Conditionally Trigger
+<!-- ### Configuring Input (Activity Types): Conditionally Trigger -->
 
 ### Event: Workflow Dispatch
 
@@ -374,20 +439,97 @@ on:
 
 ### Non-Core CI/CD Use Cases
 
+Understand that there are many ways to use GitHub Actions beyond CI/CD. For example, you can use GitHub Actions to:
+* 
 
 ### Concurrency: Order of Workflow Runs Based on When Trigger Happened
 
-### Re-running Workflows
+GitHub Actions also allows you to control the concurrency of workflow runs, so that you can ensure that only one run, one job, or one step runs at a time in a specific context.
+
+> [!NOTE]
+> This is NOT a queueing system. If you have a lot of workflow runs that are waiting to run, they will be run in the order that they were triggered.
+
+<details>
+  <summary>Example: Concurrency groups</summary>
+
+```yml
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+</details>
+
+<details>
+  <summary>Example: Using concurrency to cancel any in-progress job or run</summary>
+
+```yml
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+```
+</details>
+
+You can make the concurrency group as specific as you want. For example, you could use the branch name, the branch name and the event type, or the branch name and the event type and the workflow name.
+
+### Re-running Workflows / Retries
+
+You can re-run a workflow run from the Actions UI. This is useful if you want to re-run a failed workflow run, or if you want to re-run a successful workflow run.
+
+Retrying a job programmatically is not officially supported but can be achieved using something like a [marketplace action](https://github.com/marketplace?query=retry)
 
 ## How to Structure/Manage Jobs in the Workflow
 
-### Understanding the 1:1 Job-to-Runner Mapping
-
 ### Parallelization of Jobs
 
-### Linking Jobs
+By default all jobs in a workflow run in parallel. You can control the order of jobs by specifying dependencies.
 
 ### Matrices
+
+A matrix strategy is a great way to run the same job multiple times with different inputs. This is useful if you want to run your tests on multiple versions of a language, or if you want to run your tests on multiple operating systems.
+
+> [!NOTE]
+> The maximum number of jobs that can be used in a matrix strategy is 256.
+
+<details>
+  <summary>Example of a matrix strategy</summary>
+
+```yml
+jobs:
+  example_matrix:
+    strategy:
+      matrix:
+        version: [10, 12, 14]
+        os: [ubuntu-latest, windows-latest]
+```
+</details>
+
+* [Using a matrix for your jobs](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/using-a-matrix-for-your-jobs)
+
+### Ordering Jobs
+
+You can define the order of the jobs using the `needs` keyword. This is useful if you want to run a job that depends on the output of another job.
+
+<details>
+  <summary>Example of linking jobs</summary>
+
+```yml
+jobs:
+  job1:
+  job2:
+    needs: job1
+  job3:
+    needs: [job1, job2]
+    steps:
+      - run: echo ${{ needs.job1.outputs.myOutput }}
+```
+</details>
+
+* [Defining prerequisite jobs](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/using-jobs-in-a-workflow#defining-prerequisite-jobs)
 
 ### Job Timeouts
 
