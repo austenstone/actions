@@ -1,16 +1,78 @@
 # GitHub Actions Overview
 
+This document is a high-level overview of GitHub Actions. It is not intended to be a comprehensive guide to the platform, but rather a starting point for understanding the basics.
+
 ## Intro to Concepts
 
-### Workflow, Job, Step
+There are a few concepts that are important to understand when working with GitHub Actions.
+
+### Definitions
+
+Some basic definitions to get us started...
+
+![overview-actions-simple](images/overview-actions-simple.png)
+
+#### [Workflow](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions#workflows)
+
+A workflow is a configurable automated process that will run one or more jobs. Workflows are defined by a YAML file checked in to your repository in the `.github/workflows` directory. A repository can have multiple workflows, each of which can perform a different set of tasks.
+
+#### [Events](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions#events)
+
+An event is a specific activity in a repository that triggers a workflow run. It could be triggered by an event in your repository, or they can be triggered manually, or at a defined schedule.
+
+#### [Jobs](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions#jobs)
+
+A job is a set of steps in a workflow that is executed on the same runner. Each step is either a shell script that will be executed, or an action that will be run. Steps are executed in order and are dependent on each other. Since each step is executed on the same runner, you can share data from one step to another.
+
+#### [Steps / Actions](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions#actions)
+
+A step can be a script that will be executed or a GitHub action.
+
+#### [Runners](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions#runners)
+
+A runner is a server that runs your workflows when they're triggered. Each runner can run a single job at a time.
+
+* GHR: GitHub-Hosted Runner
+* SHR: Self-Hosted Runner
 
 ### Action: Marketplace Action, Custom Actions (Composite Action)
 
-### Runner: GitHub-Hosted Runner (GHR) and Self-Hosted Runner (SHR)
+An action is a custom application for the GitHub Actions platform that performs a complex but frequently repeated task. Use an action to help reduce the amount of repetitive code that you write in your workflow files. 
 
-### ARC: Actions Runtime Configuration
+An action can pull your git repository from GitHub, set up the correct toolchain for your build environment, or set up the authentication to your cloud provider.
 
-### Workflow Trigger
+You can write your own actions, or you can find actions to use in your workflows in the [GitHub Marketplace](https://github.com/marketplace?type=actions).
+
+For more information, see [Creating actions](https://docs.github.com/en/actions/creating-actions).
+
+### Runner: GitHub-Hosted Runner vs. Self-Hosted Runner
+
+You can run your jobs on GitHub Hosted compute or you can host your own Self Hosted runners.
+
+The standard runners GitHub offers are:
+* `ubuntu-latest`
+* `windows-latest`
+* `macos-latest` 
+
+There are also [Larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners/about-larger-runners#specifications-for-general-larger-runners)" for more demanding use cases.
+
+#### Cost
+
+Actions running on standard GitHub-hosted runners are free for public repositories and self-hosted runners are free for all repositories.
+
+For private repositories, GitHub charges based on a [per-minute rate](https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#per-minute-rates). The cost is simply the number of minutes your job runs multiplied by the per-minute rate.
+
+> [!TIP]
+> GitHub always rounds up the time that a job runs to the nearest minute. For example, if your job runs for 61 seconds, GitHub will charge you for 2 minutes.
+
+* [About Larger Runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners)
+
+### Autoscaling with self-hosted runners (ARC)
+
+You can automatically increase or decrease the number of self-hosted runners in your environment in response to the webhook events you receive with a particular label.
+
+* [Autoscaling with self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners)
+* [actions-runner-controller](https://github.com/actions/actions-runner-controller)
 
 ## GitHub Actions Ethos
 
