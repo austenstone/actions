@@ -54,7 +54,7 @@ The standard runners GitHub offers are:
 * `windows-latest`
 * `macos-latest`
 
-There are also [Larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners/about-larger-runners#specifications-for-general-larger-runners)" for more demanding use cases.
+There are also [Larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners/about-larger-runners#specifications-for-general-larger-runners) for more demanding use cases.
 
 * [About Larger Runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners)
 
@@ -74,7 +74,10 @@ GitHub Plans get a certain number of included minutes per month:
 * Enterprise: 50,000
 
 > [!WARNING]
-> These minutes are ONLY applicable to standard runners (not larger runners). The above values are for `ubuntu-latest` runners. `windows-latest` are 2x the cost (25k free) and `macos-latest` are 10x the cost (5k free).
+> These minutes are ONLY applicable to standard runners (not larger runners).
+> The above values are for `ubuntu-latest` runners.
+> `windows-latest` are 2x the cost (25k free)
+> `macos-latest` are 10x the cost (5k free).
 
 ![alt text](images/Screenshot%202024-08-12%20at%2010.33.53 AM.png)
 
