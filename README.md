@@ -284,7 +284,6 @@ The `schedule` event allows you to trigger a workflow at a scheduled time.
 ```yml
 on:
   schedule:
-    # * is a special character in YAML so you have to quote this string
             ┌───────────── minute (0 - 59)
             │ ┌───────────── hour (0 - 23)
             │ │ ┌───────────── day of the month (1 - 31)
