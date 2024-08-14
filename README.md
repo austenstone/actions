@@ -533,19 +533,296 @@ jobs:
 
 ### Job Timeouts
 
+You can define a timeout for a job, and if the job takes longer than the timeout to run, the job will be cancelled.
+
+The default timeout for a job is 6 hours or 360 minutes.
+
+> [!NOTE]
+> The `GITHUB_TOKEN` expires after the job finishes or 24 hours. This is a limiting factor for SHRs.
+
+* [`jobs.<job_id>.steps[*].timeout-minutes`](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepstimeout-minutes)
+* [`jobs.<job_id>.timeout-minutes`](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes)
+
 ### Sharing Artifacts Between Jobs
+
+The [actions/upload-artifact](https://github.com/actions/upload-artifact) and [download-artifact](https://github.com/actions/download-artifact) actions let you share data between jobs. You do have to explicitly do this on a per-job basis.
+
+<details>
+  <summary>Example of sharing artifacts between jobs</summary>
+
+```yml
+name: Share data between jobs
+
+on: [push]
+
+jobs:
+  job_1:
+    name: Add 3 and 7
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          expr 3 + 7 > math-homework.txt
+      - name: Upload math result for job 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: homework_pre
+          path: math-homework.txt
+
+  job_2:
+    name: Multiply by 9
+    needs: job_1
+    runs-on: windows-latest
+    steps:
+      - name: Download math result for job 1
+        uses: actions/download-artifact@v4
+        with:
+          name: homework_pre
+      - shell: bash
+        run: |
+          value=`cat math-homework.txt`
+          expr $value \* 9 > math-homework.txt
+      - name: Upload math result for job 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: homework_final
+          path: math-homework.txt
+
+  job_3:
+    name: Display results
+    needs: job_2
+    runs-on: macOS-latest
+    steps:
+      - name: Download math result for job 2
+        uses: actions/download-artifact@v4
+        with:
+          name: homework_final
+      - name: Print the final result
+        shell: bash
+        run: |
+          value=`cat math-homework.txt`
+          echo The result is $value
+```
+</details>
+
+* [Passing data between jobs in a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-workflow-data-as-artifacts#passing-data-between-jobs-in-a-workflow)
 
 ### Running Jobs in Containers / Service Containers
 
+Running in a container will not always be faster than running on a GHR. The time it takes to download the container image and start the container can be longer than the time it takes to start a job on a GHR.
+
+### Containers
+
+Use `jobs.<job_id>.container` to create a container to run any steps in a job that don't already specify a container.
+
+<details>
+  <summary>Example of running a job within a container</summary>
+
+```yml
+name: CI
+on:
+  push:
+    branches: [ main ]
+jobs:
+  container-test-job:
+    runs-on: ubuntu-latest
+    container: 
+      image: node:18
+      env:
+        NODE_ENV: development
+      ports:
+        - 80
+      volumes:
+        - my_docker_volume:/volume_mount
+      options: --cpus 1
+    steps:
+      - name: Check for dockerenv file
+        run: (ls /.dockerenv && echo Found dockerenv) || (echo No dockerenv)
+```
+</details>
+
+> [!TIP]
+> You can omit the `image` keyword and use the short version `container: node:18` if you don't need to specify parameters.
+
+* [Running jobs in a container](https://docs.github.com/en/actions/writing-workflows/choosing-where-your-workflow-runs/running-jobs-in-a-container)
+
+#### Service Containers
+
+Service containers let you run a container parallel to your job. This can be helpful if your job needs to talk to a database, for example.
+
+* [About service containers](https://docs.github.com/en/actions/use-cases-and-examples/using-containerized-services/about-service-containers)
+
+<details>
+  <summary>Example of using a service container</summary>
+
+```yml
+name: Redis container example
+on: push
+
+jobs:
+  # Label of the container job
+  container-job:
+    # Containers must run in Linux based operating systems
+    runs-on: ubuntu-latest
+    # Docker Hub image that `container-job` executes in
+    container: node:16-bullseye
+
+    # Service containers to run with `container-job`
+    services:
+      # Label used to access the service container
+      redis:
+        # Docker Hub image
+        image: redis
+```
+</details>
+
+#### Authenticating with a Container Registry
+
+Sometimes you will need to authenticate with a container registry to pull an image. You can use the `credentials` keyword to do this.
+
+<details>
+  <summary>Example of authenticating with a container registry</summary>
+
+```yml
+jobs:
+  build:
+    services:
+      redis:
+        # Docker Hub image
+        image: redis
+        ports:
+          - 6379:6379
+        credentials:
+          username: ${{ secrets.dockerhub_username }}
+          password: ${{ secrets.dockerhub_password }}
+      db:
+        # Private registry image
+        image:  ghcr.io/octocat/testdb:latest
+        credentials:
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.ghcr_password }}
+```
+</details>
+
+* [Authenticating with image registries](https://docs.github.com/en/actions/use-cases-and-examples/using-containerized-services/about-service-containers#authenticating-with-image-registries)
+
 ### Environments: Controls How/When a Job is Run Based on Protection Rules Set, Limits Branches, Scopes Secrets
+
+You can create environments and secure those environments with deployment protection rules. A job that references an environment must follow any protection rules for the environment before running or accessing the environment's secrets.
+
+Scoping secrets to an environment is very powerful because of the controls it gives you. You can limit which branches can access the secrets, and you can leverage the environment protection rules to control when a job can access the secrets.
+
+#### Environment Protection Rules
+
+Deployment protection rules require specific conditions to pass before a job referencing the environment can proceed.
+
+##### Required Reviewers
+
+You can require that specific individuals or teams review a pull request before a job can proceed.
+
+##### Wait timer
+
+You can delay a job for a specific amount of time before it can proceed.
+
+##### Branch restrictions
+
+You can restrict which branches or tags can access the environment.
+
+##### Admin bypass
+
+You can allow or disallow repository administrators to bypass the protection rules.
+
+##### Custom deployment protection rules
+
+You can create custom deployment protection rules to gate deployments with third-party services.
+
+* [Deployment Protection Rules](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment#deployment-protection-rules)
+* [Configuring custom deployment protection rules](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/configuring-custom-deployment-protection-rules)
+* [Environment Secrets](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment#environment-secrets)
 
 ### Conditional Jobs/Steps
 
+You can use the `if` keyword to conditionally run a job or step.
+
+```yml
+if: ${{ ! startsWith(github.ref, 'refs/tags/') }}
+```
+
+<details>
+  <summary>Example of conditional jobs</summary>
+
+```yml
+name: example-workflow
+on: [push]
+jobs:
+  production-deploy:
+    if: github.repository == 'octo-org/octo-repo-prod'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '14'
+      - run: npm install -g bats
+```
+</details>
+
+* [Using conditions to control job execution](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/using-conditions-to-control-job-execution)
+
 ### Permissions for Jobs
 
-There is a default token called `GITHUB_TOKEN`.
+There is a default token called `GITHUB_TOKEN` which by default has the permissions defined in your repositories Actions settings.
 
-[Assigning permissions to jobs](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/assigning-permissions-to-jobs)
+It's a good idea to limit permissions as much as possible by being explicit.
+
+<details>
+  <summary>Example of limiting permissions</summary>
+
+```yml
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/stale@v5
+```
+</details>
+
+#### GitHub Apps
+
+Using [actions/create-github-app-token](https://github.com/actions/create-github-app-token) you can get a token for a GitHub App. This is better than using a PAT because you get more control and you don't need to consume a license.
+
+<details>
+  <summary>Example of using a GitHub App token</summary>
+
+```yml
+name: Run tests on staging
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  hello-world:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+      - uses: ./actions/staging-tests
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+```
+</details>
+
+* [Assigning permissions to jobs](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/assigning-permissions-to-jobs)
+* [Automatic token authentication](https://docs.github.com/en/actions/security-for-github-actions/security-guides/automatic-token-authentication)
 
 ## How to Use and Create Actions (Marketplace)
 
@@ -589,9 +866,141 @@ Here are some popular actions to get you started:
 
 ## How to Organize, Share, and Scale Workflows
 
-### Reusable Workflows (and Outputs)
+One of the most powerful features of GitHub Actions is the ability to share workflows across repositories. This is useful if you have a common workflow that you want to use in multiple repositories.
+
+### Reusable Workflows
+
+These are reusable jobs. They are a great way to share common logic across multiple workflows or just to organize your workflow into smaller, more manageable pieces.
+
+#### Why?
+
+* Easier to maintain
+* Create workflows more quickly
+* Avoid duplication. DRY(don't repeat yourself).
+* Build consistently across multiple, dozens, or even hundreds of repositories
+* Require specific workflows for specific deployments
+* Promotes best practices
+* Abstract away complexity
+
+#### What can they do
+
+* Can have inputs and outputs
+* Can be nested 4 levels deep
+* Only 20 unique reusable workflows can be in a single workflow
+* Environment variables are not propagated to the reusable workflow
+* Secrets are scoped to the caller workflow
+* Secrets need to be passed to the reusable workflow
+
+<details>
+  <summary>Example of a reusable workflow</summary>
+
+##### Defining the workflow (reusable-called.yml)
+
+```yml
+on:
+  workflow_call:
+    inputs:
+      username:
+        default: ${{ github.actor }}
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run a one-line script
+        run: echo Hello, ${{ inputs.username }}!
+```
+
+##### Using the workflow (caller.yml)
+
+```yml
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-called.yml
+    with:
+      username: ${{ github.actor }}
+```
+
+</details>
+
+* [Reusing workflows](https://docs.github.com/en/actions/sharing-automations/reusing-workflows)
+* [Limitations](https://docs.github.com/en/actions/sharing-automations/reusing-workflows#limitations)
 
 ### Composite Actions
+
+These are reusable steps. Use a composite action to combine(re-use) multiple steps.
+
+> [!TIP]
+> These are far less limited than reusable workflows. Consider using composite actions over reusable workflows to start.
+
+<details>
+  <summary>Example of a composite action</summary>
+
+##### Defining the action (hello-world-composite-action.yml)
+
+```yml
+name: 'Hello World'
+description: 'Greet someone'
+inputs:
+  who-to-greet:  # id of input
+    description: 'Who to greet'
+    required: true
+    default: 'World'
+outputs:
+  random-number:
+    description: "Random number"
+    value: ${{ steps.random-number-generator.outputs.random-number }}
+runs:
+  using: "composite"
+  steps:
+    - name: Set Greeting
+      run: echo "Hello $INPUT_WHO_TO_GREET."
+      shell: bash
+      env:
+        INPUT_WHO_TO_GREET: ${{ inputs.who-to-greet }}
+
+    - name: Random Number Generator
+      id: random-number-generator
+      run: echo "random-number=$(echo $RANDOM)" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Set GitHub Path
+      run: echo "$GITHUB_ACTION_PATH" >> $GITHUB_PATH
+      shell: bash
+      env:
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+
+    - name: Run goodbye.sh
+      run: goodbye.sh
+      shell: bash
+```
+
+##### Using the action (caller.yml)
+
+```yml
+on: [push]
+
+jobs:
+  hello_world_job:
+    runs-on: ubuntu-latest
+    name: A job to say hello
+    steps:
+      - uses: actions/checkout@v4
+      - id: foo
+        uses: OWNER/hello-world-composite-action@TAG
+        with:
+          who-to-greet: 'Mona the Octocat'
+      - run: echo random-number "$RANDOM_NUMBER"
+        shell: bash
+        env:
+          RANDOM_NUMBER: ${{ steps.foo.outputs.random-number }}
+```
+
+</details>
+
+* [Creating a composite action](https://docs.github.com/en/actions/sharing-automations/creating-actions/creating-a-composite-action)
 
 ### Required Workflows (per Repo Rulesets)
 
