@@ -1240,6 +1240,7 @@ For a polyrepo you have the opposite problem and may need to pull in code or art
 
 The [actions/upload-artifact](https://github.com/actions/upload-artifact) and [download-artifact](https://github.com/actions/download-artifact) actions enable you to save output from a job. The artifact will also be visible in the Actions UI under the job summary, at the bottom.
 
+### Retention Periods
 Artifacts have a retention period which determines when they will expire and be deleted. You can specify this retention period at the organization, repository, or workflow level.
 
 <details>
@@ -1254,6 +1255,8 @@ Artifacts have a retention period which determines when they will expire and be 
       retention-days: 5
 ```
 </details>
+
+### Sharing Artifacts Between Jobs
 
 You might want to use artifacts to share data between jobs. For example you could build your project and save it as an artifact, and then deploy the artifact in a separate job.
 
@@ -1318,9 +1321,18 @@ jobs:
 * [Storing and sharing data from a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-and-sharing-data-from-a-workflow)
 * [Passing data between jobs in a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-workflow-data-as-artifacts#passing-data-between-jobs-in-a-workflow)
 
+### Artifact Attestations
+
+Leverage artifact attestations to create unfalsifiable provenance and integrity guarantees for the software you build.
+
+* [Using artifact attestations to establish provenance for builds](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)
+
 ## Caching
 
 GitHub Actions has a 10Gb rotating cache that you can leverage for any use case. This is usually used to speed up workflows.
+
+> [!NOTE]
+> GitHub will remove any cache entries that have not been accessed in over 7 days. There is no limit on the number of caches you can store, but the total size of all caches in a repository is limited to 10 GB. Once a repository has reached its maximum cache storage, the cache eviction policy will create space by deleting the oldest caches in the repository.
 
 <details>
   <summary>Example of caching dependencies to speed up workflows</summary>
@@ -1365,61 +1377,174 @@ runs:
 
 * [Caching dependencies to speed up workflows](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/caching-dependencies-to-speed-up-workflows)
 
-### Artifact Attestations
+## Secrets
 
-### Retention Period
+Secrets are variables that you create in an organization, repository, or repository environment. The secrets that you create are available to use in a GitHub Actions workflows. GitHub Actions can only read a secret if you explicitly include the secret in a workflow.
 
-### Sharing Artifacts Between Jobs
+GitHub redacts secrets from logs, but you should still be careful about what you log.
 
-### Caching Dependencies
+Sensitive secrets should leverage environments because environments have protection rules that can be used to gate access to the secrets. This includes which branch the secret can be accessed from. If you combine this with branch protection rules you can create a very secure system.
 
-### Caching Limits
-
-### Rotating Cache
-
-## How to Create and Manage Secrets
-
-### GitHub Secret Store (libsodium)
-
-### Org-Level, Repo-Level, and Env-Level Secrets (Scope)
-
-### Scoping/Limiting Secrets
-
-### OIDC Access to Cloud Environments
+* [Using secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-secrets)
 
 ### Reusable Workflows and Secrets
 
-### Redacting Secrets
+You must explicitly pass secrets to a reusable workflow. This is because secrets are scoped to the caller workflow.
+
+### OIDC Access to Cloud Environments
+
+GitHub Actions can now use OIDC tokens to authenticate to cloud environments. This is a more secure way to authenticate to cloud environments than using a PAT.
+
+* [About security hardening with OpenID Connect](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect)
 
 ### Integrating with 3rd Party Key Vaults/HSMs
 
+There are third-party actions on the marketplace that will allow you to integrate with key vaults and HSMs.
+
+<details>
+  <summary>hashicorp/hashicorp-vault</summary>
+
+```yml
+jobs:
+    build:
+        # ...
+        steps:
+            # ...
+            - name: Import Secrets
+              id: import-secrets
+              uses: hashicorp/vault-action@v2
+              with:
+                url: https://vault.mycompany.com:8200
+                token: ${{ secrets.VAULT_TOKEN }}
+                caCertificate: ${{ secrets.VAULT_CA_CERT }}
+                secrets: |
+                    secret/data/ci/aws accessKey | AWS_ACCESS_KEY_ID ;
+                    secret/data/ci/aws secretKey | AWS_SECRET_ACCESS_KEY ;
+                    secret/data/ci npm_token
+            # ...
+```
+</details>
+
+<details>
+  <summary>Azure/cli</summary>
+
+[Quickstart: Set and retrieve a secret from Azure Key Vault using Azure CLI](https://learn.microsoft.com/en-us/azure/key-vault/secrets/quick-create-cli)
+```yml
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Azure CLI script
+      uses: azure/cli@v2
+      with:
+        azcliversion: latest
+        inlineScript: |
+          az keyvault secret show --name "ExamplePassword" --vault-name "<your-unique-keyvault-name>" --query "value"
+```
+</details>
+
 ## How to Create and Manage Runners
 
-### Based on Azure and Ephemeral
+There are two types of runners: self-hosted and GitHub-hosted. GitHub has standardized runners for you, but you can also create larger runners with more resources.
 
-### Types and Sizes of Runners (and OSes)
+### Ephemeral
 
-### GHRs vs SHRs
+GitHub runners are ephemeral meaning they are created on the fly and destroyed when the job is complete. This is the default behavior for GitHub-hosted runners.
+
+<!-- ### Based on Azure -->
+
+### Types and Sizes of Runners
+
+| CPU | Memory (RAM) | Storage (SSD) | Architecture | Operating system (OS) |
+|-----|--------------|---------------|--------------|------------------------|
+| 6   | 14 GB        | 14 GB         | arm64        | macOS                  |
+| 12  | 30 GB        | 14 GB         | x64          | macOS                  |
+| 2   | 8 GB         | 75 GB         | x64, arm64   | Ubuntu                 |
+| 4   | 16 GB        | 150 GB        | x64, arm64   | Ubuntu, Windows        |
+| 8   | 32 GB        | 300 GB        | x64, arm64   | Ubuntu, Windows        |
+| 16  | 64 GB        | 600 GB        | x64, arm64   | Ubuntu, Windows        |
+| 32  | 128 GB       | 1200 GB       | x64, arm64   | Ubuntu, Windows        |
+| 64  | 208 GB       | 2040 GB       | arm64        | Ubuntu, Windows        |
+| 64  | 256 GB       | 2040 GB       | x64          | Ubuntu, Windows        |
+
+> [!NOTE]
+> The 4-vCPU Windows runner only works with the Windows 11 Desktop image.
+
+> [!NOTE]
+> Note: arm64 runners are currently in beta and subject to change.
+
+GPU runners are also available.
+
+| CPU | GPU | GPU card | Memory (RAM) | GPU memory (VRAM) | Storage (SSD) | Operating system (OS) |
+|-----|-----|----------|--------------|-------------------|---------------|------------------------|
+| 4   | 1   | Tesla T4 | 28 GB        | 16 GB             | 176 GB        | Ubuntu, Windows        |
+
+### Auto-scaling and Scale Limits
+
+If you hit scaling limits you can ask your AM or support to increase your concurrency limit.
+
+* [Usage Limits](https://docs.github.com/en/actions/administering-github-actions/usage-limits-billing-and-administration#usage-limits)
 
 ### ARC: Actions Runtime Configuration
 
+You can automatically scale your self-hosted runners in response to webhook events.
+
+* [Autoscaling with self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/autoscaling-with-self-hosted-runners)
+
 ### Runner Groups
 
-### Managed Runner GHR Images and Custom GHR Images
+Runner groups simply allow you to manage which runners are available to which repositories. This is useful if you have a runner that is only available to a specific team.
+
+* [Managing access to self-hosted runners using groups](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/managing-access-to-self-hosted-runners-using-groups)
+
+<!-- ### Managed Runner GHR Images and Custom GHR Images -->
 
 ### GHR Networking
 
-### Static IPs
+By default, GitHub-hosted runners have access to the public internet. However, you may also want these runners to access resources on your private network, such as a package registry, a secret manager, or other on-premise services.
 
-### VNET Injection (Azure Private Networking)
+* [Connecting to a private network with GitHub-hosted runners](https://docs.github.com/en/actions/using-github-hosted-runners/connecting-to-a-private-network)
 
-### API Gateways
+#### API Gateways
 
-### Wireguard
+You could run an API gateway on the edge of your private network that authenticates incoming requests with the OIDC token and then makes API requests on behalf of your workflow in your private network.
+
+* [Using an API gateway with OIDC](https://docs.github.com/en/actions/using-github-hosted-runners/connecting-to-a-private-network/using-an-api-gateway-with-oidc)
+
+#### Wireguard
+
+* [Using WireGuard to create a network overlay](https://docs.github.com/en/actions/using-github-hosted-runners/connecting-to-a-private-network/using-wireguard-to-create-a-network-overlay)
+
+#### Static IPs
+
+You have the option to create static IP addresses for your GitHub-hosted runners. This is useful if you need to whitelist the IP address of your runner in a firewall rule, for example.
+
+* [Creating static IP addresses for larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners/managing-larger-runners#creating-static-ip-addresses-for-larger-runners)
+
+#### VNET Injection (Azure Private Networking)
+
+You can use VNET injection to connect your GitHub-hosted runners to your Azure virtual network.
+
+* [Configuring private networking for GitHub-hosted runners in your enterprise](https://docs.github.com/en/enterprise-cloud@latest/admin/configuring-settings/configuring-private-networking-for-hosted-compute-products/configuring-private-networking-for-github-hosted-runners-in-your-enterprise)
 
 ### Runner Labels
 
-### Auto-scaling and Scale Limits
+You label your runners to make it easier to target them in your workflows.
+
+<details>
+  <summary>Example of using multiple runner labels</summary>
+
+```yml
+runs-on: [self-hosted, linux, x64, gpu]
+```
+</details>
+
+* [Choosing the runner for a job](https://docs.github.com/en/enterprise-cloud@latest/actions/writing-workflows/choosing-where-your-workflow-runs/choosing-the-runner-for-a-job)
+* [Using labels with self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/using-labels-with-self-hosted-runners)
 
 ## How to Govern Usage
 
