@@ -543,70 +543,6 @@ The default timeout for a job is 6 hours or 360 minutes.
 * [`jobs.<job_id>.steps[*].timeout-minutes`](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idstepstimeout-minutes)
 * [`jobs.<job_id>.timeout-minutes`](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes)
 
-### Sharing Artifacts Between Jobs
-
-The [actions/upload-artifact](https://github.com/actions/upload-artifact) and [download-artifact](https://github.com/actions/download-artifact) actions let you share data between jobs. You do have to explicitly do this on a per-job basis.
-
-<details>
-  <summary>Example of sharing artifacts between jobs</summary>
-
-```yml
-name: Share data between jobs
-
-on: [push]
-
-jobs:
-  job_1:
-    name: Add 3 and 7
-    runs-on: ubuntu-latest
-    steps:
-      - shell: bash
-        run: |
-          expr 3 + 7 > math-homework.txt
-      - name: Upload math result for job 1
-        uses: actions/upload-artifact@v4
-        with:
-          name: homework_pre
-          path: math-homework.txt
-
-  job_2:
-    name: Multiply by 9
-    needs: job_1
-    runs-on: windows-latest
-    steps:
-      - name: Download math result for job 1
-        uses: actions/download-artifact@v4
-        with:
-          name: homework_pre
-      - shell: bash
-        run: |
-          value=`cat math-homework.txt`
-          expr $value \* 9 > math-homework.txt
-      - name: Upload math result for job 2
-        uses: actions/upload-artifact@v4
-        with:
-          name: homework_final
-          path: math-homework.txt
-
-  job_3:
-    name: Display results
-    needs: job_2
-    runs-on: macOS-latest
-    steps:
-      - name: Download math result for job 2
-        uses: actions/download-artifact@v4
-        with:
-          name: homework_final
-      - name: Print the final result
-        shell: bash
-        run: |
-          value=`cat math-homework.txt`
-          echo The result is $value
-```
-</details>
-
-* [Passing data between jobs in a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-workflow-data-as-artifacts#passing-data-between-jobs-in-a-workflow)
-
 ### Running Jobs in Containers / Service Containers
 
 Running in a container will not always be faster than running on a GHR. The time it takes to download the container image and start the container can be longer than the time it takes to start a job on a GHR.
@@ -1002,15 +938,432 @@ jobs:
 
 * [Creating a composite action](https://docs.github.com/en/actions/sharing-automations/creating-actions/creating-a-composite-action)
 
-### Required Workflows (per Repo Rulesets)
+### Rulesets (Required workflows & Required checks)
+
+A new version of branch protection rules called rulesets allows you to require specific workflows to run before a pull request can be merged. These can be defined at the org level or the repo level.
+
+> [!IMPORTANT]
+> This means you can now create `pull_request` workflows at the organization level and apply them to some or all of your repos!
+
+* [Rulesets](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
+* [Require workflows to pass before merging](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-workflows-to-pass-before-merging)
+* [Require status checks to pass before merging](https://docs.github.com/en/enterprise-cloud@latest/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-status-checks-to-pass-before-merging)
 
 ### Starter Workflows
 
+Workflow templates allow everyone in your organization who has permission to create workflows to do so more quickly and easily. 
+
+You can create a workflow template by adding a `.github/workflow-templates` directory to your repository. Inside this directory, you can add one or more workflow templates. Each workflow template is a directory that contains a workflow file and a metadata file.
+
+> [!NOTE]
+> Because workflow templates require a public .github repository, they can not be private are not available for Enterprise Managed Users.
+
+<details>
+  <summary>Example of a workflow template</summary>
+
+`.github/workflow-templates/octo-organization-ci/octo-organization-ci.yml`
+
+```yml
+name: Octo Organization CI
+
+on:
+  push:
+    branches: [ $default-branch ]
+  pull_request:
+    branches: [ $default-branch ]
+...
+```
+
+`.github/workflow-templates/octo-organization-ci/octo-organization-ci.properties.json`
+
+```yml
+{
+    "name": "Octo Organization Workflow",
+    "description": "Octo Organization CI workflow template.",
+    "iconName": "example-icon",
+    "categories": [
+        "Go"
+    ],
+    "filePatterns": [
+        "package.json$",
+        "^Dockerfile",
+        ".*\\.md$"
+    ]
+}
+```
+</details>
+
 ### Managing Updates to Workflows/Actions
+
+Keeping your workflows and actions up to date is important. 
+
+* The best practice is to use a commit sha to pin your actions to a specific commit because the sha is immutable (Ex: `mxschmitt/action-tmate@43767ec126ce819b2c3e6ac57a8951a7833e4ad7`)
+* You could also use a tag (Ex: `mxschmitt/action-tmate@v3`), but tags can be changed.
+* You could also use a branch (Ex: `mxschmitt/action-tmate@main`), but branches constantly change.
+
+A great way to manage updates to your workflows and actions is to use Dependabot. Dependabot will automatically create pull requests to update your workflows and actions when new versions are released. A big benefit of doing things this way is you can test changes before they are merged.
+
+<details>
+  <summary>Example of using Dependabot to manage updates to your workflows and actions</summary>
+
+`.github/dependabot.yml`
+```yml
+# Set update schedule for GitHub Actions
+
+version: 2
+updates:
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # Check for updates to GitHub Actions every week
+      interval: "weekly"
+```
+</details>
+
+* [Keeping your actions up to date with Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot)
+* [Configuration options for the dependabot.yml file](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file)
 
 ### Monorepo vs Polyrepo
 
-## How to Manage Artifacts / Caching
+GitHub Actions is obvious when dealing with a single repository, but what about when you have multiple repositories that depend on each other?
+
+#### Monorepo
+
+For a monorepo you may not want to checkout, build, test, and deploy everything on every push. You may want to only build and test the things that have changed.
+
+You can use [`on.<push|pull_request|pull_request_target>.<paths|paths-ignore>`](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#onpushpull_requestpull_request_targetpathspaths-ignore) to trigger a workflow based on the files changed in a push or pull request.
+
+<details>
+  <summary>Example of using paths to trigger a workflow based on the files changed</summary>
+
+```yml
+on:
+  push:
+    paths:
+      - 'sub-project/**'
+      - '!sub-project/docs/**'
+```
+</details>
+
+There are actions that let you check which files have changed so that you can conditionally run jobs.
+
+<details>
+  <summary>dorny/paths-filter</summary>
+
+```yml
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          backend:
+            - 'backend/**'
+          frontend:
+            - 'frontend/**'
+
+    # run only if 'backend' files were changed
+    - name: backend tests
+      if: steps.filter.outputs.backend == 'true'
+      run: ...
+
+    # run only if 'frontend' files were changed
+    - name: frontend tests
+      if: steps.filter.outputs.frontend == 'true'
+      run: ...
+
+    # run if 'backend' or 'frontend' files were changed
+    - name: e2e tests
+      if: steps.filter.outputs.backend == 'true' || steps.filter.outputs.frontend == 'true'
+      run: ...
+```
+</details>
+
+<details>
+  <summary>tj-actions/changed-files</summary>
+
+```yml
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ------------------------------------------------------------------------------------------------------------------------------------------------
+  # Event `pull_request`: Compare the last commit of the main branch or last remote commit of the PR branch -> to the current commit of a PR branch.
+  # ------------------------------------------------------------------------------------------------------------------------------------------------
+  changed_files:
+    runs-on: ubuntu-latest  # windows-latest || macos-latest
+    name: Test changed-files
+    steps:
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------------------------------------------
+      # Example 1
+      # -----------------------------------------------------------------------------------------------------------
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        # To compare changes between the current commit and the last pushed remote commit set `since_last_remote_commit: true`. e.g
+        # with:
+        #   since_last_remote_commit: true 
+
+      - name: List all changed files
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+        run: |
+          for file in ${ALL_CHANGED_FILES}; do
+            echo "$file was changed"
+          done
+
+      # -----------------------------------------------------------------------------------------------------------
+      # Example 2
+      # -----------------------------------------------------------------------------------------------------------
+      - name: Get all changed markdown files
+        id: changed-markdown-files
+        uses: tj-actions/changed-files@v44
+        with:
+          # Avoid using single or double quotes for multiline patterns
+          files: |
+             **.md
+
+      - name: List all changed files markdown files
+        if: steps.changed-markdown-files.outputs.any_changed == 'true'
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-markdown-files.outputs.all_changed_files }}
+        run: |
+          for file in ${ALL_CHANGED_FILES}; do
+            echo "$file was changed"
+          done
+
+      # -----------------------------------------------------------------------------------------------------------
+      # Example 3
+      # -----------------------------------------------------------------------------------------------------------
+      - name: Get all test, doc and src files that have changed
+        id: changed-files-yaml
+        uses: tj-actions/changed-files@v44
+        with:
+          files_yaml: |
+            doc:
+              - '**.md'
+              - docs/**
+            test:
+              - test/**
+              - '!test/**.md'
+            src:
+              - src/**
+          # Optionally set `files_yaml_from_source_file` to read the YAML from a file. e.g `files_yaml_from_source_file: .github/changed-files.yml`
+
+      - name: Run step if test file(s) change
+        # NOTE: Ensure all outputs are prefixed by the same key used above e.g. `test_(...)` | `doc_(...)` | `src_(...)` when trying to access the `any_changed` output.
+        if: steps.changed-files-yaml.outputs.test_any_changed == 'true'  
+        env:
+          TEST_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.test_all_changed_files }}
+        run: |
+          echo "One or more test file(s) has changed."
+          echo "List all the files that have changed: $TEST_ALL_CHANGED_FILES"
+      
+      - name: Run step if doc file(s) change
+        if: steps.changed-files-yaml.outputs.doc_any_changed == 'true'
+        env:
+          DOC_ALL_CHANGED_FILES: ${{ steps.changed-files-yaml.outputs.doc_all_changed_files }}
+        run: |
+          echo "One or more doc file(s) has changed."
+          echo "List all the files that have changed: $DOC_ALL_CHANGED_FILES"
+
+      # -----------------------------------------------------------------------------------------------------------
+      # Example 4
+      # -----------------------------------------------------------------------------------------------------------
+      - name: Get changed files in the docs folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v44
+        with:
+          files: docs/*.{js,html}  # Alternatively using: `docs/**`
+          files_ignore: docs/static.js
+
+      - name: Run step if any file(s) in the docs folder change
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files-specific.outputs.all_changed_files }}
+        run: |
+          echo "One or more files in the docs folder has changed."
+          echo "List all the files that have changed: $ALL_CHANGED_FILES"
+```
+</details>
+
+You may also leverage sparse checkout to only checkout the directories that have changed.
+
+<details>
+  <summary>Example of using sparse checkout to only checkout the directories that have changed</summary>
+
+```yml
+- uses: actions/checkout@v4
+  with:
+    sparse-checkout: |
+      .github
+      src
+```
+</details>
+
+
+* [Using conditions to control job execution](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/using-conditions-to-control-job-execution)
+
+#### Polyrepo
+
+For a polyrepo you have the opposite problem and may need to pull in code or artifacts from other repositories.
+
+<details>
+  <summary>Example of checkout multiple repos</summary>
+
+```yml
+- name: Checkout
+  uses: actions/checkout@v4
+  with:
+    path: main
+
+- name: Checkout private tools
+  uses: actions/checkout@v4
+  with:
+    repository: my-org/my-private-tools
+    token: ${{ secrets.GH_PAT }} # `GH_PAT` is a secret that contains your PAT
+    path: my-tools
+```
+</details>
+
+## Artifacts
+
+The [actions/upload-artifact](https://github.com/actions/upload-artifact) and [download-artifact](https://github.com/actions/download-artifact) actions enable you to save output from a job. The artifact will also be visible in the Actions UI under the job summary, at the bottom.
+
+Artifacts have a retention period which determines when they will expire and be deleted. You can specify this retention period at the organization, repository, or workflow level.
+
+<details>
+  <summary>Example of a custom retention period</summary>
+
+```yml
+  - name: 'Upload Artifact'
+    uses: actions/upload-artifact@v4
+    with:
+      name: my-artifact
+      path: my_file.txt
+      retention-days: 5
+```
+</details>
+
+You might want to use artifacts to share data between jobs. For example you could build your project and save it as an artifact, and then deploy the artifact in a separate job.
+
+<details>
+  <summary>Example of sharing artifacts between jobs</summary>
+
+```yml
+name: Share data between jobs
+
+on: [push]
+
+jobs:
+  job_1:
+    name: Add 3 and 7
+    runs-on: ubuntu-latest
+    steps:
+      - shell: bash
+        run: |
+          expr 3 + 7 > math-homework.txt
+      - name: Upload math result for job 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: homework_pre
+          path: math-homework.txt
+
+  job_2:
+    name: Multiply by 9
+    needs: job_1
+    runs-on: windows-latest
+    steps:
+      - name: Download math result for job 1
+        uses: actions/download-artifact@v4
+        with:
+          name: homework_pre
+      - shell: bash
+        run: |
+          value=`cat math-homework.txt`
+          expr $value \* 9 > math-homework.txt
+      - name: Upload math result for job 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: homework_final
+          path: math-homework.txt
+
+  job_3:
+    name: Display results
+    needs: job_2
+    runs-on: macOS-latest
+    steps:
+      - name: Download math result for job 2
+        uses: actions/download-artifact@v4
+        with:
+          name: homework_final
+      - name: Print the final result
+        shell: bash
+        run: |
+          value=`cat math-homework.txt`
+          echo The result is $value
+```
+</details>
+
+* [Storing and sharing data from a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-and-sharing-data-from-a-workflow)
+* [Passing data between jobs in a workflow](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/storing-workflow-data-as-artifacts#passing-data-between-jobs-in-a-workflow)
+
+## Caching
+
+GitHub Actions has a 10Gb rotating cache that you can leverage for any use case. This is usually used to speed up workflows.
+
+<details>
+  <summary>Example of caching dependencies to speed up workflows</summary>
+
+#### Gradle
+
+```yml
+- name: Cache Gradle packages
+  uses: actions/cache@v3
+  with:
+    path: |
+      ~/.gradle/caches
+      ~/.gradle/wrapper
+```
+
+#### NPM Cache
+  
+```yml
+name: NPM Cache Install
+description: NPM clean install with caching
+
+runs:
+  using: "composite"
+
+  steps:
+    - uses: actions/cache@v4
+      id: cache-nodemodules
+      env:
+        cache-name: cache-node-modules
+      with:
+        path: node_modules
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+    - run: npm ci
+      if: steps.cache-nodemodules.outputs.cache-hit != 'true'
+      shell: bash
+```
+</details>
+
+* [Caching dependencies to speed up workflows](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/caching-dependencies-to-speed-up-workflows)
 
 ### Artifact Attestations
 
