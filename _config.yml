@@ -24,7 +24,7 @@ github_username:  jekyll
 
 # Build settings
 markdown: kramdown
-theme: minima
+theme: just-the-docs
 plugins:
   - jekyll-feed
 
@@ -39,3 +39,8 @@ plugins:
 #   - vendor/cache/
 #   - vendor/gems/
 #   - vendor/ruby/
+
+# just-the-docs settings
+favicon_ico: "/assets/images/favicon.ico"
+search_enabled: true
+gh_edit_link: true
