@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 'Action Marketplace Action, Custom Actions (Composite Action)'
+title: Action: Marketplace Action, Custom Actions (Composite Action)
 parent: Intro to Concepts
 has_children: false
 nav_order: 2

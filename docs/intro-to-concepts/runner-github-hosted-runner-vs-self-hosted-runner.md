@@ -1,6 +1,6 @@
 ---
 layout: default
-title: 'Runner: GitHub-Hosted Runner vs. Self-Hosted Runner'
+title: Runner: GitHub-Hosted Runner vs. Self-Hosted Runner
 parent: Intro to Concepts
 has_children: false
 nav_order: 2
