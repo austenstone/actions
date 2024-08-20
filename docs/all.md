@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Intro to Concepts
+title: All
 nav_order: 2
 ---
 {% raw %}
