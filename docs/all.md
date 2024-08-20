@@ -1,9 +1,3 @@
----
-layout: default
-title: All
-nav_order: 2
----
-{% raw %}
 # GitHub Actions Overview
 
 This document is a high-level overview of GitHub Actions. It is not intended to be a comprehensive guide to the platform, but rather a starting point for understanding the basics.
