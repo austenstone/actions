@@ -6,6 +6,6 @@ has_children: true
 permalink: /docs/intro-to-concepts
 ---
 
-## Intro to Concepts
+# Intro to Concepts
 
 There are a few concepts that are important to understand when working with GitHub Actions.

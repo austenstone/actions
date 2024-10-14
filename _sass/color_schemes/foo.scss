@@ -1,0 +1,70 @@
+@import "./color_schemes/light";
+
+$primary: rgb(230, 237, 243);
+
+$color-scheme: dark;
+$body-background-color: #0d1117; // GitHub dark background
+$body-heading-color: $primary; // GitHub dark heading
+$body-text-color: #c9d1d9; // GitHub light text
+$link-color: #1f6feb; // GitHub link blue
+$nav-child-link-color: #c9d1d9; // GitHub light text
+$sidebar-color: #0d1117; // GitHub dark background
+$base-button-color: #238636; // GitHub green button
+$btn-primary-color: #ffffff; // GitHub link blue
+$code-background-color: #0d1117; // GitHub dark background
+$code-linenumber-color: #8b949e; // GitHub line number color
+$feedback-color: darken(#0d1117, 3%); // Darkened GitHub dark background
+$table-background-color: #0d1117; // GitHub dark background
+$search-background-color: #0d1117; // GitHub dark background
+$search-result-preview-color: #c9d1d9; // GitHub light text
+$border-color: #30363d; // GitHub border color
+
+.site-title {
+  color: $primary;
+}
+
+#site-nav {
+  padding-left: 10px;
+}
+.nav-list .nav-list-item .nav-list-expander {
+  width: 36px !important;
+  height: 36px !important;
+  padding: 8px !important;
+}
+.nav-list .nav-list-item .nav-list-expander {
+  color: $primary !important;
+  z-index: 99;
+}
+.nav-list .nav-list-item .nav-list-expander:hover {
+  background: inherit !important;
+}
+.nav-list .nav-list-item .nav-list-link {
+  padding: 6px 8px 6px 16px !important;
+  transition: background 33.333ms linear;
+  border-radius: 6px;
+  color: $primary !important;
+  font-size: 14px;
+}
+.nav-list .nav-list-item a.nav-list-link {
+  position: relative;
+}
+
+.nav-list .nav-list-item .nav-list-link.active {
+  background: rgba(177, 186, 196, 0.08) !important; 
+}
+
+.nav-list .nav-list-item .nav-list-link:hover {
+  // box-shadow: inset 0 0 0 max(1px, 0.0625rem);
+  background: rgba(177, 186, 196, 0.12) !important;
+}
+
+.nav-list-link.active::after {
+  position: absolute;
+  top: calc(50% - 12px);
+  left: -8px;
+  width: 4px;
+  height: 24px;
+  content: "";
+  background-color: var(--fgColor-accent, var(--color-accent-fg, #2f81f7));
+  border-radius: 6px;
+}

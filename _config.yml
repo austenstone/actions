@@ -13,7 +13,7 @@
 # you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
-title: GitHub Actions Guide
+title: GitHub Actions
 email: austenstone@github.com
 description: >- # this means to ignore newlines until "baseurl:"
   A guide to using GitHub Actions.
@@ -44,3 +44,4 @@ plugins:
 favicon_ico: "/assets/images/favicon.ico"
 search_enabled: true
 gh_edit_link: true
+color_scheme: foo

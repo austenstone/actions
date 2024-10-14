@@ -1,0 +1,30 @@
+<footer class="site-footer">
+  <button class="btn js-toggle-dark-mode">Preview dark color scheme</button>
+
+  <script>
+  const toggleDarkMode = document.querySelector('.js-toggle-dark-mode');
+
+  jtd.addEvent(toggleDarkMode, 'click', function(){
+    if (jtd.getTheme() === 'dark') {
+      jtd.setTheme('light');
+      toggleDarkMode.textContent = 'Preview dark color scheme';
+    } else {
+      jtd.setTheme('dark');
+      toggleDarkMode.textContent = 'Return to the light side';
+    }
+  });
+
+  // add media listener for dark mode
+  // const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  // darkModeMediaQuery.addListener(function(e) {
+  //   if (e.matches) {
+  //     jtd.setTheme('dark');
+  //     toggleDarkMode.textContent = 'Return to the light side';
+  //   } else {
+  //     jtd.setTheme('light');
+  //     toggleDarkMode.textContent = 'Preview dark color scheme';
+  //   }
+  // });
+  </script>
+
+</footer>
