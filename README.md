@@ -67,17 +67,19 @@ For private repositories, GitHub charges based on a [per-minute rate](https://do
 > [!TIP]
 > GitHub always rounds up the time that a job runs to the nearest minute. For example, if your job runs for 61 seconds, GitHub will charge you for 2 minutes.
 
-GitHub Plans get a certain number of included minutes per month:
+You are entitled to a certain amount of free minutes and storage based on your plan. If you exceed these limits, you will be charged for additional usage.
 
-* Free: 2,000
-* Team: 3,000
-* Enterprise: 50,000
+| Plan | Storage | Minutes (per month) |
+|------|---------|-------------------|
+| GitHub Team | 2 GB | 3,000 |
+| GitHub Enterprise Cloud | 50 GB | 50,000 |
 
-> [!WARNING]
+> [!NOTE]
 > These minutes are ONLY applicable to standard runners (not larger runners).
 > The above values are for `ubuntu-latest` runners.
 > `windows-latest` are 2x the cost (25k free)
 > `macos-latest` are 10x the cost (5k free).
+> Logs and job summaries do not count towards storage usage.
 
 ![alt text](images/Screenshot%202024-08-12%20at%2010.33.53 AM.png)
 
@@ -1598,7 +1600,7 @@ There are existing deployment protection rules via GitHub Apps. You can also cre
 * [Configuring custom deployment protection rules](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/configuring-custom-deployment-protection-rules)
 * [Creating custom deployment protection rules](https://docs.github.com/en/actions/managing-workflow-runs-and-deployments/managing-deployments/creating-custom-deployment-protection-rules)
 
-### Spending Limits and Budgets/Cost Centers (BvN)
+### Spending Limits and Budgets/Cost Centers
 
 It's always a good idea to set spending limits to avoid accidents.
 
@@ -1861,9 +1863,9 @@ You can also search logs for specific text in a more performant way than CTRL+F.
 
 Workflow run logs are retained for 90 days by default. You can [configure the retention period for workflow run logs](https://docs.github.com/en/organizations/managing-organization-settings/configuring-the-retention-period-for-github-actions-artifacts-and-logs-in-your-organization) at the organization or repository level up to 90 days for public repos or 400 days for private repos.
 
-### Formatting
+#### Formatting
 
-There are numerous ways to format logs such as annotations, grouping, masking, coloring, etc.
+There are numerous ways to format logs such as annotations, grouping, masking, coloring, etc. You can do it manually or use the [actions/toolkit](https://github.com/actions/toolkit/tree/main/packages/core#logging) to help you format your logs.
 
 ![image](https://github.com/user-attachments/assets/03231846-05c8-44b2-862a-b264f93b044f)
 
@@ -1874,45 +1876,110 @@ There are numerous ways to format logs such as annotations, grouping, masking, c
 
 ## How to Manage Cost and Billing
 
+GitHub Actions is a metered product so we need to be careful about how we use it to avoid unexpected costs.
+
 ### Pricing
 
-### Entitlements
+GitHub Actions is free for public repositories. For private repositories, GitHub offers a range of pricing plans based on usage.
 
-### Billing Page in GitHub (Soon to be BvN)
+See [Cost](#cost) for more information on pricing.
+
+### Billing Page in GitHub
+
+Budgets and alerts allow you to track spending on metered products for your accounts, organizations, cost centers (enterprise only), and repositories.
+
+* [Using budgets to control spending on metered products](https://docs.github.com/en/enterprise-cloud@latest/billing/managing-your-billing/using-budgets-control-spending)
+* [Charging business units](https://docs.github.com/en/enterprise-cloud@latest/billing/managing-your-billing/charging-business-units)
 
 ### CSV Usage Download and GitHub Usage Report Viewer
 
+You can download a CSV file of all metered usage for your account, organization, or repository. This is useful for analyzing usage and costs.
+
+* [Viewing your usage of metered products](https://docs.github.com/en/billing/managing-billing-for-your-products/viewing-your-product-usage)
+* [About usage reports](https://docs.github.com/en/billing/managing-your-billing/about-usage-reports)
+
+#### [GitHub Usage Report Viewer](https://austenstone.github.io/github-actions-usage-report/)
+
+[austenstone](https://github.com/austenstone) created a usage report viewer to visualize your usage report csv.
+
 ### Invoicing
+
+GitHub Actions usage is billed monthly. You can view your invoice in the billing settings of your account or organization.
 
 ### Paying Through GitHub vs MSFT Azure
 
-## How to Migrate
+GitHub Actions can be billed through and azure subscription. This also means discounts applied to that Azure subscription will apply to GitHub Actions usage.
 
-### Importer
+If you're not using an Azure subscription, you can pay for GitHub Actions usage monthly through GitHub.
 
-### VS Code Extension + Copilot
+## [How to Migrate](https://docs.github.com/en/actions/migrating-to-github-actions)
+
+There are many ways to migrate to GitHub Actions. The best way to migrate depends on your current CI/CD system and how complex your workflows are.
+
+### [Importer](https://docs.github.com/en/actions/migrating-to-github-actions/using-github-actions-importer-to-automate-migrations)
+
+The GitHub Actions Importer can be a great first step in migrating but it will not cover all use cases.
+
+The importer includes forecasting capabilities to help you understand the cost of migrating to GitHub Actions.
+
+### Copilot
+
+You can leverage [GitHub Copilot](https://github.com/features/copilot/plans) to help you write workflows. Copilot greatly accelerates the process of writing workflows if you can provide it context and your old workflow files.
 
 ## Understanding Platform Limits
 
-### Concurrency Limit
+There are numerous platforms limits in place to ensure the stability and reliability of GitHub Actions.
 
-### API Rate Limits
+A majority of the limits can be adjusted by contacting GitHub support or your account manager.
 
-### Reusable Workflow Limit
+* [Limits in GitHub Actions](https://docs.github.com/en/actions/reference/actions-limits)
+* [Concurrency Limits](https://docs.github.com/en/actions/concepts/overview/usage-limits-billing-and-administration#usage-limits)
+
+<!-- ### API Rate Limits
+
+The API is a dependent service and has its own rate limits.
+
+GitHub Apps have higher rate limits than PATs. GitHub can increase rate limits for GitHub Apps on a case-by-case basis.
+
+* [Commonly hit dependent service limits](https://docs.github.com/en/actions/reference/actions-limits#commonly-hit-dependent-service-limits)
+
+### [Reusable Workflow](#reusable-workflows) Limit
+
+[Reusable workflows](#reusable-workflows) have some limitations that you should be aware of. Most notably:
+* You can only nest them up to 4 levels deep
+* You can call a maximum of 20 unique reusable workflows in a single workflow run
+* env is in a different context
+
+* [Reusable workflow limitations](https://docs.github.com/en/actions/sharing-automations/reusing-workflows#limitations)
+
+For this reason consider using [composite actions](#composite-actions) first.
 
 ### Workflow Run Time
 
+The maximum workflow execution time is 35 days. If a workflow run reaches this limit, the workflow run is cancelled. This period includes execution duration, and time spent on waiting and approval.
+
 ### Job Execution Time
+
+For github-hosted runners each job in a workflow can run for up to 6 hours of execution time. If a job reaches this limit, the job is terminated and fails.
+
+For self-hosted runners, there is no execution time limit.
 
 ### Matrix Size
 
-### Cache Size per Repo
+A job matrix can generate a maximum of 256 jobs per workflow run. This limit applies to both GitHub-hosted and self-hosted runners.
+
+Cache Size per Repo
+
+Each repository has a maximum cache size of 10 GB. If a repository exceeds this limit, the oldest cache entries will be removed to make room for new ones.
 
 ### Queue Limit
 
+You can have a maximum of 500 workflow runs queued every 10 seconds.
+
 ### Artifact and Log Retention
+
+Artifacts and logs are retained for 90 days. After this period, they are automatically deleted. -->
 
 ### Exception Process
 
-[Usage Limits, Billing, and Administration Documentation](https://docs.github.com/en/actions/administering-github-actions/usage-limits-billing-and-administration)
-
+If you need to increase any of the limits, you can contact GitHub support or your account manager. They will review your request and may grant an exception on a case-by-case basis.
