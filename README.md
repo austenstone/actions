@@ -1841,7 +1841,7 @@ Datadog provides great CI visibility and monitoring capabilities.
 * [Blog: Monitor your CI pipelines and tests with Datadog CI Visibility](https://www.datadoghq.com/blog/datadog-ci-visibility/)
 * [Blog: Monitor your GitHub Actions workflows with Datadog CI Visibility](https://www.datadoghq.com/blog/datadog-github-actions-ci-visibility/)
 
-### [Trunk](https://trunk.io/flaky-tests)
+#### [Trunk](https://trunk.io/flaky-tests)
 
 Trunk detects, quarantines, and eliminates flaky tests from your code base. Works with any language, any test runner, and any CI provider.
 
