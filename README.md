@@ -1865,6 +1865,8 @@ Workflow run logs are retained for 90 days by default. You can [configure the re
 
 There are numerous ways to format logs such as annotations, grouping, masking, coloring, etc.
 
+![image](https://github.com/user-attachments/assets/03231846-05c8-44b2-862a-b264f93b044f)
+
 * [Workflow run logs](https://docs.github.com/en/actions/monitoring-and-troubleshooting-workflows/monitoring-workflows/using-workflow-run-logs)
 * [Enable debug logging](https://docs.github.com/en/actions/monitoring-and-troubleshooting-workflows/troubleshooting-workflows/enabling-debug-logging)
 * [Workflow commands for GitHub Actions](https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#about-workflow-commands)
