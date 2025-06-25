@@ -2,6 +2,22 @@
 
 This document is a high-level overview of GitHub Actions. It is not intended to be a comprehensive guide to the platform, but rather a starting point for understanding the basics.
 
+- [GitHub Actions Overview](#github-actions-overview)
+  - [Intro to Concepts](#intro-to-concepts)
+  - [How to Trigger/Initiate Workflow Runs](#how-to-triggerinitiate-workflow-runs)
+  - [How to Structure/Manage Jobs in the Workflow](#how-to-structuremanage-jobs-in-the-workflow)
+  - [How to Use and Create Actions (Marketplace)](#how-to-use-and-create-actions-marketplace)
+  - [How to Organize, Share, and Scale Workflows](#how-to-organize-share-and-scale-workflows)
+  - [Artifacts](#artifacts)
+  - [Caching](#caching)
+  - [Secrets](#secrets)
+  - [How to Create and Manage Runners](#how-to-create-and-manage-runners)
+  - [How to Govern Usage](#how-to-govern-usage)
+  - [How to Observe What’s Going on with CI/CD](#how-to-observe-whats-going-on-with-cicd)
+  - [How to Manage Cost and Billing](#how-to-manage-cost-and-billing)
+  - [How to Migrate](#how-to-migrate)
+  - [Understanding Platform Limits](#understanding-platform-limits)
+
 ## Intro to Concepts
 
 There are a few concepts that are important to understand when working with GitHub Actions.
