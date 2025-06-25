@@ -58,6 +58,8 @@ There are also [Larger runners](https://docs.github.com/en/actions/using-github-
 
 * [About Larger Runners](https://docs.github.com/en/actions/using-github-hosted-runners/about-larger-runners)
 
+![Actions _ Overview   Tech Requirements Check](https://github.com/user-attachments/assets/89eb287f-e840-4ea6-8f0c-d3277fd5c941)
+
 #### Cost
 
 Actions running on standard GitHub-hosted runners are free for public repositories and self-hosted runners are free for all repositories.
