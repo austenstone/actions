@@ -1,0 +1,36 @@
+name: 'Health Check Action'
+description: 'A JavaScript action that performs comprehensive health checks on applications'
+author: 'GitHub Actions Demo'
+
+inputs:
+  url:
+    description: 'URL to health check'
+    required: true
+  timeout:
+    description: 'Timeout in seconds'
+    required: false
+    default: '30'
+  retry-count:
+    description: 'Number of retries'
+    required: false
+    default: '3'
+  expected-status:
+    description: 'Expected HTTP status code'
+    required: false
+    default: '200'
+
+outputs:
+  status:
+    description: 'Health check status (healthy/unhealthy)'
+  response-time:
+    description: 'Response time in milliseconds'
+  details:
+    description: 'Detailed health check results'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'activity'
+  color: 'green'

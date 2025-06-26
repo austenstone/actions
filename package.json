@@ -1,0 +1,48 @@
+{
+  "name": "github-actions-demo",
+  "version": "1.0.0",
+  "description": "Comprehensive GitHub Actions demonstration repository showcasing advanced workflows, patterns, and best practices",
+  "keywords": [
+    "github-actions",
+    "ci-cd",
+    "devops",
+    "automation",
+    "workflow",
+    "pipeline",
+    "security",
+    "deployment",
+    "docker",
+    "kubernetes",
+    "demo",
+    "learning",
+    "tutorial"
+  ],
+  "homepage": "https://github.com/your-username/github-actions-demo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/github-actions-demo.git"
+  },
+  "license": "MIT",
+  "author": "GitHub Actions Demo Team",
+  "main": "README.md",
+  "scripts": {
+    "install-web-app": "cd src/web-app && npm install",
+    "install-all": "npm run install-web-app",
+    "test-web-app": "cd src/web-app && npm test",
+    "test-cli-tool": "cd src/cli-tool && go test -v ./...",
+    "build-web-app": "cd src/web-app && npm run build",
+    "build-cli-tool": "cd src/cli-tool && go build -o cli-tool .",
+    "build-microservice": "cd src/microservice && go build -o microservice .",
+    "lint": "echo 'Linting all projects...' && cd src/web-app && npm run lint",
+    "format": "echo 'Formatting all projects...' && cd src/web-app && npm run format",
+    "validate-workflows": "echo 'Use GitHub CLI or Actions tab to validate workflows'",
+    "demo": "echo 'Visit the Actions tab in GitHub to run demonstration workflows'"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}

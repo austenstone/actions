@@ -1,0 +1,384 @@
+name: 06 - Event-Driven Workflow Orchestra
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**']
+  workflow_dispatch:
+    inputs:
+      trigger_downstream:
+        description: 'Trigger downstream workflows'
+        required: false
+        type: boolean
+        default: true
+      deployment_target:
+        description: 'Target for deployment workflow'
+        required: false
+        type: choice
+        options: ['staging', 'production', 'both']
+        default: 'staging'
+
+jobs:
+  # Main orchestrator job
+  orchestrator:
+    name: Workflow Orchestrator
+    runs-on: ubuntu-latest
+    outputs:
+      should-trigger-security: ${{ steps.decision.outputs.trigger_security }}
+      should-trigger-staging: ${{ steps.decision.outputs.trigger_staging }}
+      should-trigger-production: ${{ steps.decision.outputs.trigger_production }}
+      build-artifact: ${{ steps.build.outputs.artifact_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Analyze changes
+        id: changes
+        run: |
+          echo "🔍 Analyzing repository changes..."
+          
+          # Check what files changed
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            git diff --name-only HEAD^ HEAD > changed_files.txt
+          else
+            echo "src/web-app/index.js" > changed_files.txt
+            echo "src/cli-tool/main.go" >> changed_files.txt
+          fi
+          
+          echo "📝 Changed files:"
+          cat changed_files.txt
+          
+          # Determine which workflows to trigger
+          WEB_APP_CHANGED="false"
+          CLI_TOOL_CHANGED="false"
+          MICROSERVICE_CHANGED="false"
+          
+          if grep -q "src/web-app" changed_files.txt; then
+            WEB_APP_CHANGED="true"
+          fi
+          
+          if grep -q "src/cli-tool" changed_files.txt; then
+            CLI_TOOL_CHANGED="true"
+          fi
+          
+          if grep -q "src/microservice" changed_files.txt; then
+            MICROSERVICE_CHANGED="true"
+          fi
+          
+          echo "web_app_changed=$WEB_APP_CHANGED" >> $GITHUB_OUTPUT
+          echo "cli_tool_changed=$CLI_TOOL_CHANGED" >> $GITHUB_OUTPUT
+          echo "microservice_changed=$MICROSERVICE_CHANGED" >> $GITHUB_OUTPUT
+          
+      - name: Build decision matrix
+        id: decision
+        run: |
+          echo "🎯 Building workflow decision matrix..."
+          
+          # Always trigger security scan if code changed
+          TRIGGER_SECURITY="true"
+          
+          # Trigger staging based on changes or manual input
+          TRIGGER_STAGING="false"
+          if [[ "${{ steps.changes.outputs.web_app_changed }}" == "true" ]] || \
+             [[ "${{ steps.changes.outputs.microservice_changed }}" == "true" ]] || \
+             [[ "${{ github.event.inputs.deployment_target }}" == "staging" ]] || \
+             [[ "${{ github.event.inputs.deployment_target }}" == "both" ]]; then
+            TRIGGER_STAGING="true"
+          fi
+          
+          # Trigger production only on main branch and specific conditions
+          TRIGGER_PRODUCTION="false"
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] && \
+             ([[ "${{ github.event.inputs.deployment_target }}" == "production" ]] || \
+              [[ "${{ github.event.inputs.deployment_target }}" == "both" ]]); then
+            TRIGGER_PRODUCTION="true"
+          fi
+          
+          echo "trigger_security=$TRIGGER_SECURITY" >> $GITHUB_OUTPUT
+          echo "trigger_staging=$TRIGGER_STAGING" >> $GITHUB_OUTPUT
+          echo "trigger_production=$TRIGGER_PRODUCTION" >> $GITHUB_OUTPUT
+          
+          echo "📊 Decision Matrix:"
+          echo "  Security Scan: $TRIGGER_SECURITY"
+          echo "  Staging Deploy: $TRIGGER_STAGING"
+          echo "  Production Deploy: $TRIGGER_PRODUCTION"
+          
+      - name: Build shared artifact
+        id: build
+        run: |
+          echo "🔨 Building shared artifacts..."
+          
+          # Create a shared build artifact
+          mkdir -p build-artifacts
+          echo "Build timestamp: $(date)" > build-artifacts/build-info.txt
+          echo "Commit SHA: ${{ github.sha }}" >> build-artifacts/build-info.txt
+          echo "Actor: ${{ github.actor }}" >> build-artifacts/build-info.txt
+          echo "Event: ${{ github.event_name }}" >> build-artifacts/build-info.txt
+          
+          # Simulate building applications
+          if [[ "${{ steps.changes.outputs.web_app_changed }}" == "true" ]]; then
+            echo "Building web application..." >> build-artifacts/build-info.txt
+            echo "web-app-v1.0.0.tar.gz" > build-artifacts/web-app-artifact.txt
+          fi
+          
+          if [[ "${{ steps.changes.outputs.cli_tool_changed }}" == "true" ]]; then
+            echo "Building CLI tool..." >> build-artifacts/build-info.txt
+            echo "cli-tool-v1.0.0-linux-amd64" > build-artifacts/cli-tool-artifact.txt
+          fi
+          
+          if [[ "${{ steps.changes.outputs.microservice_changed }}" == "true" ]]; then
+            echo "Building microservice..." >> build-artifacts/build-info.txt
+            echo "microservice:v1.0.0" > build-artifacts/microservice-artifact.txt
+          fi
+          
+          # Upload artifacts for downstream workflows
+          tar -czf workflow-artifacts.tar.gz build-artifacts/
+          
+          echo "artifact_name=workflow-artifacts.tar.gz" >> $GITHUB_OUTPUT
+          echo "✅ Build artifacts created"
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.artifact_name }}
+          path: workflow-artifacts.tar.gz
+          retention-days: 7
+
+  # Trigger security workflow
+  trigger-security-workflow:
+    name: Trigger Security Analysis
+    needs: orchestrator
+    runs-on: ubuntu-latest
+    if: needs.orchestrator.outputs.should-trigger-security == 'true'
+    steps:
+      - name: Trigger security workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🔒 Triggering security analysis workflow...');
+            
+            // In a real scenario, you would use repository_dispatch
+            // or workflow_run to trigger the actual security workflow
+            
+            const response = await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: '04-security-deployment.yml',
+              ref: 'main',
+              inputs: {
+                environment: 'staging',
+                security_scan: 'true'
+              }
+            });
+            
+            console.log('✅ Security workflow triggered');
+            
+      - name: Wait for security workflow
+        run: |
+          echo "⏳ Waiting for security analysis to complete..."
+          # In a real scenario, you would wait for the workflow to complete
+          # and check its status before proceeding
+          sleep 10
+          echo "✅ Security analysis completed (simulated)"
+
+  # Trigger staging deployment
+  trigger-staging-deployment:
+    name: Trigger Staging Deployment
+    needs: [orchestrator, trigger-security-workflow]
+    runs-on: ubuntu-latest
+    if: needs.orchestrator.outputs.should-trigger-staging == 'true'
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.orchestrator.outputs.build-artifact }}
+          
+      - name: Extract artifacts
+        run: |
+          tar -xzf workflow-artifacts.tar.gz
+          echo "📦 Available artifacts:"
+          ls -la build-artifacts/
+          
+      - name: Trigger staging deployment
+        run: |
+          echo "🚀 Triggering staging deployment..."
+          
+          # Simulate triggering deployment workflow
+          echo "📋 Deployment configuration:"
+          echo "  Environment: staging"
+          echo "  Artifacts: $(ls build-artifacts/)"
+          echo "  Commit: ${{ github.sha }}"
+          
+          # In a real scenario, this would trigger the actual deployment
+          sleep 5
+          echo "✅ Staging deployment triggered"
+          
+      - name: Monitor deployment
+        run: |
+          echo "👀 Monitoring staging deployment..."
+          
+          # Simulate monitoring deployment progress
+          for i in {1..5}; do
+            echo "  Deployment progress: ${i}0%"
+            sleep 2
+          done
+          
+          echo "✅ Staging deployment completed successfully"
+
+  # Trigger production deployment (only if staging succeeds)
+  trigger-production-deployment:
+    name: Trigger Production Deployment
+    needs: [orchestrator, trigger-staging-deployment]
+    runs-on: ubuntu-latest
+    if: |
+      always() && 
+      needs.orchestrator.outputs.should-trigger-production == 'true' &&
+      needs.trigger-staging-deployment.result == 'success'
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.orchestrator.outputs.build-artifact }}
+          
+      - name: Extract artifacts
+        run: |
+          tar -xzf workflow-artifacts.tar.gz
+          echo "📦 Production deployment artifacts:"
+          ls -la build-artifacts/
+          
+      - name: Production deployment approval
+        run: |
+          echo "🔐 Production deployment requires additional approval..."
+          echo "✅ Auto-approved for demo (in real scenario, this would require manual approval)"
+          
+      - name: Trigger production deployment
+        run: |
+          echo "🚀 Triggering production deployment..."
+          
+          # Simulate production deployment
+          echo "📋 Production deployment configuration:"
+          echo "  Environment: production"
+          echo "  Artifacts: $(ls build-artifacts/)"
+          echo "  Commit: ${{ github.sha }}"
+          echo "  Previous stage: staging (✅ success)"
+          
+          # In a real scenario, this would trigger the production deployment workflow
+          sleep 8
+          echo "✅ Production deployment triggered"
+          
+      - name: Monitor production deployment
+        run: |
+          echo "👀 Monitoring production deployment..."
+          
+          # Simulate monitoring production deployment
+          for i in {1..7}; do
+            echo "  Production deployment progress: ${i}5%"
+            sleep 1
+          done
+          
+          echo "✅ Production deployment completed successfully"
+
+  # Notification and cleanup workflow
+  workflow-notification:
+    name: Workflow Orchestration Complete
+    needs: [orchestrator, trigger-security-workflow, trigger-staging-deployment, trigger-production-deployment]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Gather workflow results
+        id: results
+        run: |
+          echo "📊 Gathering workflow orchestration results..."
+          
+          SECURITY_STATUS="${{ needs.trigger-security-workflow.result }}"
+          STAGING_STATUS="${{ needs.trigger-staging-deployment.result }}"
+          PRODUCTION_STATUS="${{ needs.trigger-production-deployment.result }}"
+          
+          echo "security_status=$SECURITY_STATUS" >> $GITHUB_OUTPUT
+          echo "staging_status=$STAGING_STATUS" >> $GITHUB_OUTPUT
+          echo "production_status=$PRODUCTION_STATUS" >> $GITHUB_OUTPUT
+          
+          echo "🎯 Workflow Results:"
+          echo "  Security Analysis: $SECURITY_STATUS"
+          echo "  Staging Deployment: $STAGING_STATUS"
+          echo "  Production Deployment: $PRODUCTION_STATUS"
+          
+      - name: Send workflow notifications
+        run: |
+          echo "📬 Sending workflow orchestration notifications..."
+          
+          # Create notification payload
+          cat > notification.json << EOF
+          {
+            "workflow": "Event-Driven Workflow Orchestra",
+            "repository": "${{ github.repository }}",
+            "commit": "${{ github.sha }}",
+            "actor": "${{ github.actor }}",
+            "event": "${{ github.event_name }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "results": {
+              "security": "${{ steps.results.outputs.security_status }}",
+              "staging": "${{ steps.results.outputs.staging_status }}",
+              "production": "${{ steps.results.outputs.production_status }}"
+            },
+            "artifacts": "${{ needs.orchestrator.outputs.build-artifact }}",
+            "triggered_workflows": [
+              "Security Analysis",
+              "Staging Deployment",
+              "Production Deployment"
+            ]
+          }
+          EOF
+          
+          echo "📨 Notification payload:"
+          cat notification.json | jq '.'
+          
+          # Simulate sending notifications
+          echo "✅ Notifications sent to configured channels"
+          
+      - name: Create workflow summary
+        run: |
+          echo "## 🎭 Event-Driven Workflow Orchestra Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🎯 Orchestration Overview" >> $GITHUB_STEP_SUMMARY
+          echo "This workflow demonstrated event-driven orchestration of multiple workflows based on:" >> $GITHUB_STEP_SUMMARY
+          echo "- File changes detected in the repository" >> $GITHUB_STEP_SUMMARY
+          echo "- Manual workflow dispatch inputs" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch-based deployment rules" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📊 Workflow Execution Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow | Status | Triggered |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Analysis | ${{ steps.results.outputs.security_status || 'skipped' }} | ${{ needs.orchestrator.outputs.should-trigger-security }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Staging Deployment | ${{ steps.results.outputs.staging_status || 'skipped' }} | ${{ needs.orchestrator.outputs.should-trigger-staging }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Production Deployment | ${{ steps.results.outputs.production_status || 'skipped' }} | ${{ needs.orchestrator.outputs.should-trigger-production }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🏗️ Architecture Patterns Demonstrated" >> $GITHUB_STEP_SUMMARY
+          echo "- **Event-driven workflows**: Trigger based on repository events" >> $GITHUB_STEP_SUMMARY
+          echo "- **Conditional execution**: Smart workflow triggering based on changes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact sharing**: Pass build artifacts between workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependency management**: Ensure workflows execute in correct order" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cross-workflow communication**: Repository dispatch and workflow_run events" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment promotion**: Staging → Production workflow" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🎵 Orchestration Benefits" >> $GITHUB_STEP_SUMMARY
+          echo "- **Efficiency**: Only run necessary workflows based on changes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reliability**: Ensure dependencies are met before proceeding" >> $GITHUB_STEP_SUMMARY
+          echo "- **Scalability**: Easy to add new workflows to the orchestration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Visibility**: Clear view of entire deployment pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "- **Control**: Fine-grained control over workflow execution" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Cleanup workflow artifacts
+        run: |
+          echo "🧹 Cleaning up workflow artifacts..."
+          
+          # In a real scenario, you might want to clean up temporary artifacts
+          # or archive them for later use
+          
+          echo "✅ Cleanup completed"
+          
+          echo "🎉 Event-driven workflow orchestration completed successfully!"

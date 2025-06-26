@@ -1,0 +1,331 @@
+name: 01 - Smart Web App CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/web-app/**']
+  pull_request:
+    branches: [main]
+    paths: ['src/web-app/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options: ['staging', 'production']
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '18'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/web-app
+
+jobs:
+  # Job to detect changes and set up the build matrix
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      web_app: ${{ steps.changes.outputs.web_app }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            web_app:
+              - 'src/web-app/**'
+              
+      - name: Set build matrix
+        id: set-matrix
+        run: |
+          if [[ "${{ steps.changes.outputs.web_app }}" == "true" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "matrix={\"os\":[\"ubuntu-latest\",\"windows-latest\",\"macos-latest\"],\"node-version\":[\"16\",\"18\",\"20\"]}" >> $GITHUB_OUTPUT
+          else
+            echo "matrix={\"os\":[\"ubuntu-latest\"],\"node-version\":[\"18\"]}" >> $GITHUB_OUTPUT
+          fi
+
+  # Parallel testing across multiple platforms and Node versions
+  test:
+    name: Test Suite
+    needs: changes
+    if: needs.changes.outputs.webapp == 'true' && github.event.inputs.skip_tests != 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: src/web-app/package-lock.json
+          
+      - name: Install dependencies
+        run: |
+          cd src/web-app
+          npm ci
+          
+      - name: Run unit tests
+        run: |
+          cd src/web-app
+          npm run test:unit
+          
+      - name: Run integration tests
+        run: |
+          cd src/web-app
+          npm run test:integration
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.node-version }}
+          path: |
+            src/web-app/coverage/
+            src/web-app/test-results/
+
+  # Code quality and linting
+  lint:
+    name: Code Quality
+    needs: changes
+    if: needs.changes.outputs.webapp == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/web-app/package-lock.json
+          
+      - name: Install dependencies
+        run: |
+          cd src/web-app
+          npm ci
+          
+      - name: Run ESLint
+        run: |
+          cd src/web-app
+          npm run lint
+          
+      - name: Run Prettier check
+        run: |
+          cd src/web-app
+          npm run format:check
+          
+      - name: Type checking
+        run: |
+          cd src/web-app
+          npm run type-check
+
+  # Security scanning
+  security:
+    name: Security Scan
+    needs: changes
+    if: needs.changes.outputs.webapp == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        
+      - name: Run npm audit
+        run: |
+          cd src/web-app
+          npm audit --audit-level moderate
+          
+      # - name: Run Snyk security scan (optional)
+      #   uses: snyk/actions/node@master
+      #   continue-on-error: true
+      #   env:
+      #     SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      #   with:
+      #     args: --project-name=web-app --severity-threshold=high
+
+  # Build the application
+  build:
+    name: Build Application
+    needs: [changes, test, lint, security]
+    if: always() && needs.changes.outputs.webapp == 'true' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: src/web-app/package-lock.json
+          
+      - name: Install dependencies
+        run: |
+          cd src/web-app
+          npm ci
+          
+      - name: Generate version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            VERSION="pr-${{ github.event.number }}-${{ github.sha }}"
+          else
+            VERSION="${{ github.sha }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Build application
+        run: |
+          cd src/web-app
+          npm run build
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-app-build-${{ steps.version.outputs.version }}
+          path: src/web-app/dist/
+          retention-days: 30
+          
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: src/web-app
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to staging environment
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [changes, build]
+    if: needs.changes.outputs.webapp == 'true' && (github.ref == 'refs/heads/develop' || github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    # environment: 
+    #   name: staging
+    #   url: https://staging.example.com
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-app-build-${{ needs.build.outputs.version }}
+          path: ./dist
+          
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying version ${{ needs.build.outputs.version }} to staging..."
+          # Simulate deployment
+          sleep 10
+          echo "✅ Deployment to staging completed!"
+          
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          # Simulate smoke tests
+          sleep 5
+          echo "✅ Smoke tests passed!"
+          
+      - name: Update deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'success',
+              description: 'Deployed to staging',
+              context: 'deploy/staging'
+            })
+
+  # Deploy to production environment
+  deploy-production:
+    name: Deploy to Production
+    needs: [changes, build, deploy-staging]
+    if: needs.changes.outputs.webapp == 'true' && (github.ref == 'refs/heads/main' || github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    # environment: 
+    #   name: production
+    #   url: https://production.example.com
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-app-build-${{ needs.build.outputs.version }}
+          path: ./dist
+          
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying version ${{ needs.build.outputs.version }} to production..."
+          # Simulate deployment
+          sleep 15
+          echo "✅ Deployment to production completed!"
+          
+      - name: Run health checks
+        run: |
+          echo "🏥 Running health checks..."
+          # Simulate health checks
+          sleep 5
+          echo "✅ Health checks passed!"
+          
+      - name: Update deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: 'success',
+              description: 'Deployed to production',
+              context: 'deploy/production'
+            })
+            
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ needs.build.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: Production" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://production.example.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY

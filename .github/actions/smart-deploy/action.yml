@@ -1,0 +1,221 @@
+name: 'Smart Deploy'
+description: 'Intelligent deployment with health checks and rollback capability'
+author: 'GitHub Actions Demo'
+
+inputs:
+  environment:
+    description: 'Target environment (staging, production)'
+    required: true
+  health_check_url:
+    description: 'Health check endpoint URL'
+    required: true
+  rollback_on_failure:
+    description: 'Automatically rollback on deployment failure'
+    required: false
+    default: 'true'
+  timeout_minutes:
+    description: 'Deployment timeout in minutes'
+    required: false
+    default: '10'
+  notification_webhook:
+    description: 'Webhook URL for deployment notifications'
+    required: false
+
+outputs:
+  deployment_id:
+    description: 'Unique deployment identifier'
+    value: ${{ steps.deploy.outputs.deployment_id }}
+  deployment_url:
+    description: 'URL of the deployed application'
+    value: ${{ steps.deploy.outputs.deployment_url }}
+  deployment_status:
+    description: 'Final deployment status'
+    value: ${{ steps.finalize.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating deployment inputs..."
+        
+        if [[ -z "${{ inputs.environment }}" ]]; then
+          echo "❌ Environment is required"
+          exit 1
+        fi
+        
+        if [[ -z "${{ inputs.health_check_url }}" ]]; then
+          echo "❌ Health check URL is required"
+          exit 1
+        fi
+        
+        if [[ "${{ inputs.environment }}" != "staging" && "${{ inputs.environment }}" != "production" ]]; then
+          echo "❌ Environment must be 'staging' or 'production'"
+          exit 1
+        fi
+        
+        echo "✅ Input validation passed"
+        
+    - name: Pre-deployment checks
+      shell: bash
+      run: |
+        echo "🔍 Running pre-deployment checks..."
+        
+        # Check if target environment is healthy
+        if curl -f -s "${{ inputs.health_check_url }}" > /dev/null; then
+          echo "✅ Target environment is healthy"
+        else
+          echo "⚠️ Target environment health check failed (this is expected for new deployments)"
+        fi
+        
+        # Check deployment prerequisites
+        echo "✅ Pre-deployment checks completed"
+        
+    - name: Deploy application
+      id: deploy
+      shell: bash
+      run: |
+        echo "🚀 Starting deployment to ${{ inputs.environment }}..."
+        
+        # Generate unique deployment ID
+        DEPLOYMENT_ID="deploy-$(date +%s)-${{ github.run_id }}"
+        echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+        
+        # Set deployment URL based on environment
+        if [[ "${{ inputs.environment }}" == "production" ]]; then
+          DEPLOYMENT_URL="https://production.example.com"
+        else
+          DEPLOYMENT_URL="https://staging.example.com"
+        fi
+        echo "deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+        
+        # Simulate deployment process
+        echo "📦 Deploying application..."
+        sleep 5
+        
+        # Simulate potential deployment issues
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && [[ "${{ github.event.inputs.test_failure }}" == "true" ]]; then
+          echo "❌ Simulated deployment failure"
+          exit 1
+        fi
+        
+        echo "✅ Application deployed successfully"
+        echo "🔗 Deployment URL: $DEPLOYMENT_URL"
+        
+    - name: Health check verification
+      id: health_check
+      shell: bash
+      run: |
+        echo "🏥 Verifying application health..."
+        
+        HEALTH_URL="${{ inputs.health_check_url }}"
+        TIMEOUT_MINUTES="${{ inputs.timeout_minutes }}"
+        TIMEOUT_SECONDS=$((TIMEOUT_MINUTES * 60))
+        
+        # Wait for application to be ready
+        for i in $(seq 1 $TIMEOUT_SECONDS); do
+          if curl -f -s "$HEALTH_URL" > /dev/null; then
+            echo "✅ Health check passed after ${i} seconds"
+            echo "health_status=healthy" >> $GITHUB_OUTPUT
+            break
+          fi
+          
+          if [[ $i -eq $TIMEOUT_SECONDS ]]; then
+            echo "❌ Health check failed after $TIMEOUT_MINUTES minutes"
+            echo "health_status=unhealthy" >> $GITHUB_OUTPUT
+            
+            if [[ "${{ inputs.rollback_on_failure }}" == "true" ]]; then
+              echo "🔄 Initiating rollback..."
+              exit 1
+            fi
+          fi
+          
+          sleep 1
+        done
+        
+    - name: Run smoke tests
+      shell: bash
+      run: |
+        echo "🧪 Running smoke tests..."
+        
+        # Basic connectivity test
+        curl -f -s "${{ steps.deploy.outputs.deployment_url }}" > /dev/null
+        echo "✅ Connectivity test passed"
+        
+        # API endpoint test
+        if [[ "${{ steps.deploy.outputs.deployment_url }}" == *"example.com"* ]]; then
+          echo "✅ API endpoints accessible (simulated)"
+        fi
+        
+        echo "✅ Smoke tests completed"
+        
+    - name: Send notification
+      if: inputs.notification_webhook != ''
+      shell: bash
+      run: |
+        echo "📬 Sending deployment notification..."
+        
+        PAYLOAD=$(cat <<EOF
+        {
+          "deployment_id": "${{ steps.deploy.outputs.deployment_id }}",
+          "environment": "${{ inputs.environment }}",
+          "status": "success",
+          "url": "${{ steps.deploy.outputs.deployment_url }}",
+          "commit": "${{ github.sha }}",
+          "actor": "${{ github.actor }}",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        )
+        
+        # In a real scenario, you would send this to your notification webhook
+        echo "📨 Notification payload:"
+        echo "$PAYLOAD"
+        
+        echo "✅ Notification sent"
+        
+    - name: Finalize deployment
+      id: finalize
+      shell: bash
+      run: |
+        echo "🎯 Finalizing deployment..."
+        
+        # Record deployment in registry (simulated)
+        echo "📝 Recording deployment in registry..."
+        
+        # Set final status
+        if [[ "${{ steps.health_check.outputs.health_status }}" == "healthy" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "✅ Deployment completed successfully"
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "❌ Deployment failed"
+        fi
+        
+        # Deployment summary
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployment ID**: ${{ steps.deploy.outputs.deployment_id }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **URL**: ${{ steps.deploy.outputs.deployment_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ${{ steps.health_check.outputs.health_status == 'healthy' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Rollback on failure
+      if: failure() && inputs.rollback_on_failure == 'true'
+      shell: bash
+      run: |
+        echo "🔄 Initiating automatic rollback..."
+        
+        # Simulate rollback process
+        echo "📦 Rolling back to previous version..."
+        sleep 3
+        
+        # Verify rollback
+        echo "🏥 Verifying rollback health..."
+        sleep 2
+        
+        echo "✅ Rollback completed successfully"
+        
+        # Update deployment status
+        echo "📝 Updating deployment status to 'rolled_back'"

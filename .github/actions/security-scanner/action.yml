@@ -1,0 +1,49 @@
+name: 'Security Scanner'
+description: 'A Docker-based action that performs comprehensive security scanning'
+author: 'GitHub Actions Demo'
+
+inputs:
+  scan-type:
+    description: 'Type of scan to perform (vulnerability, secrets, dependencies, all)'
+    required: false
+    default: 'all'
+  target-path:
+    description: 'Path to scan (relative to workspace)'
+    required: false
+    default: '.'
+  severity-threshold:
+    description: 'Minimum severity level to report (low, medium, high, critical)'
+    required: false
+    default: 'medium'
+  fail-on-findings:
+    description: 'Whether to fail the action if findings are discovered'
+    required: false
+    default: 'true'
+  output-format:
+    description: 'Output format (json, sarif, table)'
+    required: false
+    default: 'json'
+
+outputs:
+  findings-count:
+    description: 'Total number of security findings'
+  critical-count:
+    description: 'Number of critical findings'
+  high-count:
+    description: 'Number of high severity findings'
+  scan-report:
+    description: 'Path to the detailed scan report'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.scan-type }}
+    - ${{ inputs.target-path }}
+    - ${{ inputs.severity-threshold }}
+    - ${{ inputs.fail-on-findings }}
+    - ${{ inputs.output-format }}
+
+branding:
+  icon: 'shield'
+  color: 'red'

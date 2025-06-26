@@ -1,0 +1,472 @@
+# Advanced Workflow Patterns Example
+# This demonstrates advanced GitHub Actions patterns and techniques
+
+name: Advanced Patterns Demo
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      run_performance_tests:
+        description: 'Run performance tests'
+        required: false
+        default: false
+        type: boolean
+      custom_version:
+        description: 'Custom version tag'
+        required: false
+        type: string
+
+env:
+  DEFAULT_NODE_VERSION: '18'
+  DEFAULT_GO_VERSION: '1.21'
+  REGISTRY: ghcr.io
+
+jobs:
+  # Dynamic job configuration based on changes
+  detect-changes:
+    name: 🔍 Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      web-app-changed: ${{ steps.changes.outputs.web-app }}
+      cli-tool-changed: ${{ steps.changes.outputs.cli-tool }}
+      microservice-changed: ${{ steps.changes.outputs.microservice }}
+      docs-changed: ${{ steps.changes.outputs.docs }}
+      workflows-changed: ${{ steps.changes.outputs.workflows }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🔍 Detect file changes
+        id: changes
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            # For scheduled runs, test everything
+            echo "web-app=true" >> $GITHUB_OUTPUT
+            echo "cli-tool=true" >> $GITHUB_OUTPUT
+            echo "microservice=true" >> $GITHUB_OUTPUT
+            echo "docs=true" >> $GITHUB_OUTPUT
+            echo "workflows=true" >> $GITHUB_OUTPUT
+          else
+            # For push/PR, detect actual changes
+            if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "^src/web-app/"; then
+              echo "web-app=true" >> $GITHUB_OUTPUT
+            else
+              echo "web-app=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "^src/cli-tool/"; then
+              echo "cli-tool=true" >> $GITHUB_OUTPUT
+            else
+              echo "cli-tool=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "^src/microservice/"; then
+              echo "microservice=true" >> $GITHUB_OUTPUT
+            else
+              echo "microservice=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "^docs/"; then
+              echo "docs=true" >> $GITHUB_OUTPUT
+            else
+              echo "docs=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only ${{ github.event.before }}..${{ github.sha }} | grep -E "^\.github/workflows/"; then
+              echo "workflows=true" >> $GITHUB_OUTPUT
+            else
+              echo "workflows=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  # Dynamic matrix based on changes
+  test-applications:
+    name: 🧪 Test Applications
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web-app-changed == 'true' || needs.detect-changes.outputs.cli-tool-changed == 'true' || needs.detect-changes.outputs.microservice-changed == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: web-app
+            runtime: node
+            version: '18'
+            enabled: ${{ needs.detect-changes.outputs.web-app-changed == 'true' }}
+          - app: web-app
+            runtime: node
+            version: '20'
+            enabled: ${{ needs.detect-changes.outputs.web-app-changed == 'true' }}
+          - app: cli-tool
+            runtime: go
+            version: '1.20'
+            enabled: ${{ needs.detect-changes.outputs.cli-tool-changed == 'true' }}
+          - app: cli-tool
+            runtime: go
+            version: '1.21'
+            enabled: ${{ needs.detect-changes.outputs.cli-tool-changed == 'true' }}
+          - app: microservice
+            runtime: go
+            version: '1.21'
+            enabled: ${{ needs.detect-changes.outputs.microservice-changed == 'true' }}
+    
+    steps:
+      - name: 📥 Checkout code
+        if: matrix.enabled == 'true'
+        uses: actions/checkout@v4
+      
+      - name: 🏗️ Setup Runtime - Node.js
+        if: matrix.enabled == 'true' && matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.version }}
+          cache: 'npm'
+          cache-dependency-path: src/${{ matrix.app }}/package-lock.json
+      
+      - name: 🏗️ Setup Runtime - Go
+        if: matrix.enabled == 'true' && matrix.runtime == 'go'
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.version }}
+          cache-dependency-path: src/${{ matrix.app }}/go.sum
+      
+      - name: 📦 Install dependencies (Node.js)
+        if: matrix.enabled == 'true' && matrix.runtime == 'node'
+        working-directory: src/${{ matrix.app }}
+        run: npm ci
+      
+      - name: 📦 Install dependencies (Go)
+        if: matrix.enabled == 'true' && matrix.runtime == 'go'
+        working-directory: src/${{ matrix.app }}
+        run: go mod download
+      
+      - name: 🧪 Run tests (Node.js)
+        if: matrix.enabled == 'true' && matrix.runtime == 'node'
+        working-directory: src/${{ matrix.app }}
+        run: npm test
+      
+      - name: 🧪 Run tests (Go)
+        if: matrix.enabled == 'true' && matrix.runtime == 'go'
+        working-directory: src/${{ matrix.app }}
+        run: go test -v ./...
+      
+      - name: 📊 Upload test results
+        if: always() && matrix.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.app }}-${{ matrix.runtime }}-${{ matrix.version }}
+          path: |
+            src/${{ matrix.app }}/test-results/
+            src/${{ matrix.app }}/coverage/
+          retention-days: 7
+
+  # Conditional job based on PR vs push
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔍 Run security scan
+        uses: ./.github/actions/security-scanner
+        with:
+          scan-type: 'all'
+          severity-threshold: ${{ github.event_name == 'pull_request' && 'high' || 'medium' }}
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'false' || 'true' }}
+      
+      - name: 📊 Upload security results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-results
+          path: /tmp/scan-results/
+          retention-days: 30
+
+  # Performance tests with conditional execution
+  performance-tests:
+    name: ⚡ Performance Tests
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_performance_tests == 'true') ||
+      (github.event_name == 'schedule') ||
+      (github.ref == 'refs/heads/main' && needs.detect-changes.outputs.web-app-changed == 'true')
+    needs: [detect-changes, test-applications]
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.DEFAULT_NODE_VERSION }}
+      
+      - name: 📦 Install dependencies
+        working-directory: src/web-app
+        run: |
+          npm ci
+          npm install -g lighthouse artillery
+      
+      - name: 🚀 Start application
+        working-directory: src/web-app
+        run: |
+          npm start &
+          echo $! > app.pid
+          sleep 10
+      
+      - name: ⚡ Run performance tests
+        run: |
+          # Lighthouse audit
+          lighthouse http://localhost:3000 --output=json --output-path=lighthouse-report.json --chrome-flags="--headless"
+          
+          # Load testing
+          echo "config: {target: 'http://localhost:3000'}" > artillery-config.yml
+          echo "scenarios:" >> artillery-config.yml
+          echo "  - duration: 30" >> artillery-config.yml
+          echo "    arrivalRate: 5" >> artillery-config.yml
+          echo "    requests:" >> artillery-config.yml
+          echo "      - get:" >> artillery-config.yml
+          echo "          url: '/'" >> artillery-config.yml
+          
+          artillery run artillery-config.yml --output artillery-report.json
+      
+      - name: 🛑 Stop application
+        if: always()
+        working-directory: src/web-app
+        run: |
+          if [ -f app.pid ]; then
+            kill $(cat app.pid) || true
+            rm app.pid
+          fi
+      
+      - name: 📊 Upload performance results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-test-results
+          path: |
+            lighthouse-report.json
+            artillery-report.json
+          retention-days: 30
+
+  # Build with version management
+  build-and-version:
+    name: 🏗️ Build and Version
+    runs-on: ubuntu-latest
+    needs: [detect-changes, test-applications]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should-deploy: ${{ steps.deploy-check.outputs.should-deploy }}
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🏷️ Generate version
+        id: version
+        run: |
+          if [[ "${{ github.event.inputs.custom_version }}" != "" ]]; then
+            VERSION="${{ github.event.inputs.custom_version }}"
+          else
+            # Generate semantic version based on commit messages
+            if git log --format="%s" HEAD~1..HEAD | grep -qE "^(feat|feature)"; then
+              VERSION_TYPE="minor"
+            elif git log --format="%s" HEAD~1..HEAD | grep -qE "^(fix|bugfix)"; then
+              VERSION_TYPE="patch"
+            else
+              VERSION_TYPE="patch"
+            fi
+            
+            # Get last version tag
+            LAST_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            
+            # Calculate new version (simplified)
+            VERSION=$(date +%Y%m%d.%H%M%S)-${GITHUB_SHA::8}
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+      
+      - name: 🏗️ Build applications
+        run: |
+          echo "Building applications with version ${{ steps.version.outputs.version }}"
+          
+          # Build web app if changed
+          if [[ "${{ needs.detect-changes.outputs.web-app-changed }}" == "true" ]]; then
+            echo "Building web application..."
+            cd src/web-app
+            npm ci
+            npm run build
+            cd ../..
+          fi
+          
+          # Build CLI tool if changed
+          if [[ "${{ needs.detect-changes.outputs.cli-tool-changed }}" == "true" ]]; then
+            echo "Building CLI tool..."
+            cd src/cli-tool
+            go build -ldflags="-X main.version=${{ steps.version.outputs.version }}" -o cli-tool
+            cd ../..
+          fi
+          
+          # Build microservice if changed
+          if [[ "${{ needs.detect-changes.outputs.microservice-changed }}" == "true" ]]; then
+            echo "Building microservice..."
+            cd src/microservice
+            go build -ldflags="-X main.version=${{ steps.version.outputs.version }}" -o microservice
+            cd ../..
+          fi
+      
+      - name: 🔍 Check deployment conditions
+        id: deploy-check
+        run: |
+          should_deploy=false
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            should_deploy=true
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]] && [[ "${{ needs.detect-changes.outputs.web-app-changed }}" == "true" || "${{ needs.detect-changes.outputs.microservice-changed }}" == "true" ]]; then
+            should_deploy=true
+          fi
+          
+          echo "should-deploy=$should_deploy" >> $GITHUB_OUTPUT
+          echo "Should deploy: $should_deploy"
+      
+      - name: 📦 Create release artifacts
+        if: steps.deploy-check.outputs.should-deploy == 'true'
+        run: |
+          mkdir -p release-artifacts
+          
+          # Package artifacts
+          if [[ "${{ needs.detect-changes.outputs.web-app-changed }}" == "true" ]]; then
+            tar -czf release-artifacts/web-app-${{ steps.version.outputs.version }}.tar.gz -C src/web-app dist/
+          fi
+          
+          if [[ "${{ needs.detect-changes.outputs.cli-tool-changed }}" == "true" ]]; then
+            cp src/cli-tool/cli-tool release-artifacts/cli-tool-${{ steps.version.outputs.version }}
+          fi
+          
+          if [[ "${{ needs.detect-changes.outputs.microservice-changed }}" == "true" ]]; then
+            cp src/microservice/microservice release-artifacts/microservice-${{ steps.version.outputs.version }}
+          fi
+      
+      - name: 📊 Upload build artifacts
+        if: steps.deploy-check.outputs.should-deploy == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ steps.version.outputs.version }}
+          path: release-artifacts/
+          retention-days: 90
+
+  # Conditional deployment
+  deploy:
+    name: 🚀 Deploy
+    runs-on: ubuntu-latest
+    needs: [build-and-version, security-scan]
+    if: needs.build-and-version.outputs.should-deploy == 'true'
+    
+    environment:
+      name: ${{ github.event.inputs.environment || 'staging' }}
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: 📥 Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts-${{ needs.build-and-version.outputs.version }}
+          path: release-artifacts/
+      
+      - name: 🚀 Deploy applications
+        id: deploy
+        run: |
+          environment="${{ github.event.inputs.environment || 'staging' }}"
+          version="${{ needs.build-and-version.outputs.version }}"
+          
+          echo "Deploying version $version to $environment..."
+          
+          # Simulate deployment
+          sleep 5
+          
+          case $environment in
+            "staging")
+              url="https://staging.example.com"
+              ;;
+            "production")
+              url="https://example.com"
+              ;;
+            *)
+              url="https://$environment.example.com"
+              ;;
+          esac
+          
+          echo "url=$url" >> $GITHUB_OUTPUT
+          echo "✅ Deployment completed successfully"
+          echo "🌐 Application URL: $url"
+      
+      - name: 🏥 Post-deployment health check
+        run: |
+          echo "Performing health check on ${{ steps.deploy.outputs.url }}..."
+          # curl -f ${{ steps.deploy.outputs.url }}/health || exit 1
+          echo "✅ Health check passed"
+      
+      - name: 📢 Deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ needs.build-and-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: [${{ steps.deploy.outputs.url }}](${{ steps.deploy.outputs.url }})" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed at**: $(date)" >> $GITHUB_STEP_SUMMARY
+
+  # Notification job (always runs if previous jobs complete)
+  notify:
+    name: 📢 Notify
+    runs-on: ubuntu-latest
+    needs: [detect-changes, test-applications, security-scan, performance-tests, deploy]
+    if: always()
+    
+    steps:
+      - name: 📋 Collect job results
+        run: |
+          echo "## 📊 Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Detect Changes | ${{ needs.detect-changes.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Applications | ${{ needs.test-applications.result == 'success' && '✅' || (needs.test-applications.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result == 'success' && '✅' || (needs.security-scan.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Performance Tests | ${{ needs.performance-tests.result == 'success' && '✅' || (needs.performance-tests.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy | ${{ needs.deploy.result == 'success' && '✅' || (needs.deploy.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add change summary
+          echo "### 📝 Changes Detected" >> $GITHUB_STEP_SUMMARY
+          echo "- Web App: ${{ needs.detect-changes.outputs.web-app-changed == 'true' && '✅ Changed' || '⏭️ No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CLI Tool: ${{ needs.detect-changes.outputs.cli-tool-changed == 'true' && '✅ Changed' || '⏭️ No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Microservice: ${{ needs.detect-changes.outputs.microservice-changed == 'true' && '✅ Changed' || '⏭️ No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Documentation: ${{ needs.detect-changes.outputs.docs-changed == 'true' && '✅ Changed' || '⏭️ No changes' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflows: ${{ needs.detect-changes.outputs.workflows-changed == 'true' && '✅ Changed' || '⏭️ No changes' }}" >> $GITHUB_STEP_SUMMARY

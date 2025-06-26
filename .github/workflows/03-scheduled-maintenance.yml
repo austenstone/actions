@@ -1,0 +1,541 @@
+name: 03 - Scheduled Maintenance & Monitoring
+
+on:
+  schedule:
+    # Daily at 2 AM UTC - Dependency scan and health checks
+    - cron: '0 2 * * *'
+    # Weekly on Sunday at 6 AM UTC - Cleanup stale issues/PRs
+    - cron: '0 6 * * 0'
+    # Monthly on the 1st at 8 AM UTC - Security audit and comprehensive checks
+    - cron: '0 8 1 * *'
+  workflow_dispatch:
+    inputs:
+      maintenance_type:
+        description: 'Type of maintenance to run'
+        required: true
+        type: choice
+        options: ['dependencies', 'cleanup', 'security', 'health-check', 'all']
+        default: 'all'
+      dry_run:
+        description: 'Run in dry-run mode (no actual changes)'
+        required: false
+        type: boolean
+        default: false
+      notify:
+        description: 'Send notifications'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  # Determine what maintenance tasks to run
+  prepare:
+    name: Prepare Maintenance
+    runs-on: ubuntu-latest
+    outputs:
+      run_dependencies: ${{ steps.tasks.outputs.run_dependencies }}
+      run_cleanup: ${{ steps.tasks.outputs.run_cleanup }}
+      run_security: ${{ steps.tasks.outputs.run_security }}
+      run_health: ${{ steps.tasks.outputs.run_health }}
+      is_monthly: ${{ steps.schedule.outputs.is_monthly }}
+      is_weekly: ${{ steps.schedule.outputs.is_weekly }}
+      is_daily: ${{ steps.schedule.outputs.is_daily }}
+    steps:
+      - name: Determine schedule type
+        id: schedule
+        run: |
+          if [[ "${{ github.event.schedule }}" == "0 8 1 * *" ]]; then
+            echo "is_monthly=true" >> $GITHUB_OUTPUT
+            echo "is_weekly=false" >> $GITHUB_OUTPUT
+            echo "is_daily=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.schedule }}" == "0 6 * * 0" ]]; then
+            echo "is_monthly=false" >> $GITHUB_OUTPUT
+            echo "is_weekly=true" >> $GITHUB_OUTPUT
+            echo "is_daily=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.schedule }}" == "0 2 * * *" ]]; then
+            echo "is_monthly=false" >> $GITHUB_OUTPUT
+            echo "is_weekly=false" >> $GITHUB_OUTPUT
+            echo "is_daily=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_monthly=false" >> $GITHUB_OUTPUT
+            echo "is_weekly=false" >> $GITHUB_OUTPUT
+            echo "is_daily=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Determine tasks to run
+        id: tasks
+        run: |
+          MAINTENANCE_TYPE="${{ github.event.inputs.maintenance_type }}"
+          
+          # Default based on schedule if not manual trigger
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            if [[ "${{ steps.schedule.outputs.is_monthly }}" == "true" ]]; then
+              MAINTENANCE_TYPE="all"
+            elif [[ "${{ steps.schedule.outputs.is_weekly }}" == "true" ]]; then
+              MAINTENANCE_TYPE="cleanup"
+            elif [[ "${{ steps.schedule.outputs.is_daily }}" == "true" ]]; then
+              MAINTENANCE_TYPE="dependencies"
+            fi
+          fi
+          
+          # Set task flags
+          if [[ "$MAINTENANCE_TYPE" == "all" || "$MAINTENANCE_TYPE" == "dependencies" ]]; then
+            echo "run_dependencies=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_dependencies=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$MAINTENANCE_TYPE" == "all" || "$MAINTENANCE_TYPE" == "cleanup" ]]; then
+            echo "run_cleanup=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_cleanup=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$MAINTENANCE_TYPE" == "all" || "$MAINTENANCE_TYPE" == "security" ]]; then
+            echo "run_security=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_security=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$MAINTENANCE_TYPE" == "all" || "$MAINTENANCE_TYPE" == "health-check" ]]; then
+            echo "run_health=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_health=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Dependency audit and updates
+  dependency-audit:
+    name: Dependency Audit
+    needs: prepare
+    if: needs.prepare.outputs.run_dependencies == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      vulnerabilities_found: ${{ steps.audit.outputs.vulnerabilities_found }}
+      updates_available: ${{ steps.updates.outputs.updates_available }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Audit Node.js dependencies
+        id: audit
+        run: |
+          VULNERABILITIES=0
+          
+          if [ -f "src/web-app/package.json" ]; then
+            cd src/web-app
+            echo "🔍 Auditing Node.js dependencies..."
+            
+            # Run npm audit and capture output
+            if ! npm audit --audit-level=moderate --json > audit-results.json; then
+              VULNERABILITIES=$(jq '.metadata.vulnerabilities.total' audit-results.json)
+              echo "⚠️ Found $VULNERABILITIES vulnerabilities"
+              
+              # Try to fix automatically
+              if [[ "${{ github.event.inputs.dry_run }}" != "true" ]]; then
+                echo "🔧 Attempting to fix vulnerabilities..."
+                npm audit fix
+              fi
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+            
+            cd ../..
+          fi
+          
+          if [ -f "src/cli-tool/go.mod" ]; then
+            cd src/cli-tool
+            echo "🔍 Auditing Go dependencies..."
+            
+            # Check for known vulnerabilities
+            go install golang.org/x/vuln/cmd/govulncheck@latest
+            if ! govulncheck ./...; then
+              echo "⚠️ Go vulnerabilities found"
+              VULNERABILITIES=$((VULNERABILITIES + 1))
+            else
+              echo "✅ No Go vulnerabilities found"
+            fi
+            
+            cd ../..
+          fi
+          
+          echo "vulnerabilities_found=$VULNERABILITIES" >> $GITHUB_OUTPUT
+          
+      - name: Check for dependency updates
+        id: updates
+        run: |
+          UPDATES=0
+          
+          if [ -f "src/web-app/package.json" ]; then
+            cd src/web-app
+            echo "🔍 Checking for Node.js updates..."
+            
+            # Use npm-check-updates to find outdated packages
+            npx npm-check-updates --format group --target minor > updates.txt || true
+            
+            if grep -q "The following dependencies are satisfied by their declared version range" updates.txt; then
+              echo "✅ All Node.js dependencies are up to date"
+            else
+              UPDATES=$((UPDATES + 1))
+              echo "📦 Node.js updates available"
+              cat updates.txt
+            fi
+            
+            cd ../..
+          fi
+          
+          if [ -f "src/cli-tool/go.mod" ]; then
+            cd src/cli-tool
+            echo "🔍 Checking for Go updates..."
+            
+            # Check for module updates
+            go list -u -m -json all | jq -r 'select(.Update) | "\(.Path): \(.Version) -> \(.Update.Version)"' > go-updates.txt
+            
+            if [ -s go-updates.txt ]; then
+              UPDATES=$((UPDATES + 1))
+              echo "📦 Go updates available:"
+              cat go-updates.txt
+            else
+              echo "✅ All Go dependencies are up to date"
+            fi
+            
+            cd ../..
+          fi
+          
+          echo "updates_available=$UPDATES" >> $GITHUB_OUTPUT
+          
+      - name: Create dependency update PR
+        if: steps.updates.outputs.updates_available > 0 && github.event.inputs.dry_run != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            
+            // Create a new branch for updates
+            const branchName = `maintenance/dependency-updates-${new Date().toISOString().split('T')[0]}`;
+            
+            try {
+              execSync(`git checkout -b ${branchName}`, { stdio: 'inherit' });
+              
+              // Apply updates (this is a simplified version)
+              if (require('fs').existsSync('src/web-app/package.json')) {
+                execSync('cd src/web-app && npx npm-check-updates -u --target minor', { stdio: 'inherit' });
+                execSync('cd src/web-app && npm install', { stdio: 'inherit' });
+              }
+              
+              // Commit changes
+              execSync('git add .', { stdio: 'inherit' });
+              execSync('git commit -m "chore: update dependencies"', { stdio: 'inherit' });
+              execSync(`git push origin ${branchName}`, { stdio: 'inherit' });
+              
+              // Create PR
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'chore: Automated dependency updates',
+                head: branchName,
+                base: 'main',
+                body: `
+                ## 🤖 Automated Dependency Updates
+                
+                This PR contains automated dependency updates found during scheduled maintenance.
+                
+                ### Changes:
+                - Updated Node.js dependencies to latest minor versions
+                - Updated Go modules (if applicable)
+                
+                ### Testing:
+                - [ ] All tests pass
+                - [ ] Security scan complete
+                - [ ] Manual testing (if required)
+                
+                **Auto-generated by:** \`03-scheduled-maintenance.yml\`
+                `
+              });
+              
+              console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+              
+            } catch (error) {
+              console.error('Failed to create dependency update PR:', error);
+            }
+
+  # Cleanup stale issues and PRs
+  cleanup-stale:
+    name: Cleanup Stale Items
+    needs: prepare
+    if: needs.prepare.outputs.run_cleanup == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      issues_closed: ${{ steps.stale-results.outputs.issues_closed }}
+      prs_closed: ${{ steps.stale-results.outputs.prs_closed }}
+    steps:
+      - name: Cleanup stale issues and PRs
+        id: cleanup
+        uses: actions/stale@v9
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 30
+          days-before-close: 30
+          stale-issue-message: |
+            ⏰ This issue has been marked as stale due to inactivity. It was last updated over 30 days ago.
+            
+            It will be automatically closed in 30 days if no further activity occurs. To keep it open, please add a comment or remove the 'stale' label.
+          stale-pr-message: |
+            ⏰ This pull request has been marked as stale due to inactivity. It was last updated over 30 days ago.
+            
+            It will be automatically closed in 30 days if no further activity occurs. To keep it open, please add a comment or remove the 'stale' label.
+          close-issue-message: |
+            🤖 This issue has been automatically closed due to inactivity.
+            
+            If this issue is still relevant, please reopen it or create a new issue with updated information.
+          close-pr-message: |
+            🤖 This pull request has been automatically closed due to inactivity.
+            
+            If you would like to continue working on this PR, please reopen it and address any conflicts or feedback.
+          stale-issue-label: 'stale'
+          stale-pr-label: 'stale'
+          exempt-issue-labels: 'keep-open,bug,security,help-wanted'
+          exempt-pr-labels: 'keep-open,bug,security,help-wanted'
+          only-labels: ''
+          operations-per-run: 100
+          remove-stale-when-updated: true
+          debug-only: ${{ github.event.inputs.dry_run == 'true' }}
+      
+      - name: Get stale action results
+        id: stale-results
+        run: |
+          echo "issues_closed=0" >> $GITHUB_OUTPUT
+          echo "prs_closed=0" >> $GITHUB_OUTPUT
+
+  # Security audit and scanning
+  security-audit:
+    name: Security Audit
+    needs: prepare
+    if: needs.prepare.outputs.run_security == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    outputs:
+      security_issues: ${{ steps.security.outputs.security_issues }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, go
+          
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        
+      - name: Security scan
+        id: security
+        run: |
+          SECURITY_ISSUES=0
+          
+          echo "🔒 Running security audit..."
+          
+          # Check for exposed secrets
+          echo "🔍 Scanning for potential secrets..."
+          if grep -r -i "password\|secret\|key\|token" --include="*.js" --include="*.go" --include="*.yml" . | grep -v ".git" | grep -v "README"; then
+            echo "⚠️ Potential secrets found in code"
+            SECURITY_ISSUES=$((SECURITY_ISSUES + 1))
+          fi
+          
+          # Check for hardcoded URLs and IPs
+          echo "🔍 Scanning for hardcoded URLs and IPs..."
+          if grep -r -E "https?://[^/]+|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}" --include="*.js" --include="*.go" . | grep -v ".git" | grep -v "README" | grep -v "example.com"; then
+            echo "ℹ️ Hardcoded URLs/IPs found (review recommended)"
+          fi
+          
+          # Check permissions on files
+          echo "🔍 Checking file permissions..."
+          find . -type f -perm -o+w | grep -v ".git" || echo "✅ No world-writable files found"
+          
+          echo "security_issues=$SECURITY_ISSUES" >> $GITHUB_OUTPUT
+
+  # Repository health check
+  health-check:
+    name: Repository Health Check
+    needs: prepare
+    if: needs.prepare.outputs.run_health == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      # health_score: ${{ steps.health.outputs.health_score }}
+      # recommendations: ${{ steps.health.outputs.recommendations }}
+      status: completed
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Repository health check
+        id: health
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let healthScore = 100;
+            const recommendations = [];
+            
+            // Check for essential files
+            const essentialFiles = ['README.md', 'LICENSE', '.gitignore'];
+            const { data: contents } = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: ''
+            });
+            
+            const fileNames = contents.map(item => item.name);
+            
+            for (const file of essentialFiles) {
+              if (!fileNames.includes(file)) {
+                healthScore -= 10;
+                recommendations.push(`Add ${file} to the repository`);
+              }
+            }
+            
+            // Check branch protection
+            try {
+              await github.rest.repos.getBranchProtection({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                branch: 'main'
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                healthScore -= 15;
+                recommendations.push('Enable branch protection for main branch');
+              }
+            }
+            
+            // Check for recent commits
+            const { data: commits } = await github.rest.repos.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 10
+            });
+            
+            const lastCommit = new Date(commits[0].commit.committer.date);
+            const daysSinceLastCommit = Math.floor((new Date() - lastCommit) / (1000 * 60 * 60 * 24));
+            
+            if (daysSinceLastCommit > 30) {
+              healthScore -= 5;
+              recommendations.push(`Last commit was ${daysSinceLastCommit} days ago - consider more frequent updates`);
+            }
+            
+            // Check for GitHub Actions
+            if (!fileNames.includes('.github')) {
+              healthScore -= 10;
+              recommendations.push('Consider adding GitHub Actions for CI/CD');
+            }
+            
+            core.setOutput('health_score', healthScore);
+            core.setOutput('recommendations', recommendations.join('\n'));
+            
+            console.log(`Repository health score: ${healthScore}/100`);
+            if (recommendations.length > 0) {
+              console.log('Recommendations:');
+              recommendations.forEach(rec => console.log(`- ${rec}`));
+            }
+
+  # Send notifications about maintenance results
+  notify-results:
+    name: Send Notifications
+    needs: [prepare, dependency-audit, cleanup-stale, security-audit, health-check]
+    runs-on: ubuntu-latest
+    if: always() && github.event.inputs.notify != 'false'
+    steps:
+      - name: Prepare notification summary
+        id: summary
+        run: |
+          echo "## 🔧 Scheduled Maintenance Report" > summary.md
+          echo "" >> summary.md
+          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> summary.md
+          echo "**Type:** ${{ needs.prepare.outputs.is_monthly == 'true' && 'Monthly' || needs.prepare.outputs.is_weekly == 'true' && 'Weekly' || needs.prepare.outputs.is_daily == 'true' && 'Daily' || 'Manual' }}" >> summary.md
+          echo "" >> summary.md
+          
+          # Dependency audit results
+          if [[ "${{ needs.dependency-audit.result }}" == "success" ]]; then
+            echo "✅ **Dependency Audit:** Complete" >> summary.md
+            if [[ "${{ needs.dependency-audit.outputs.vulnerabilities_found }}" != "0" ]]; then
+              echo "  - ⚠️ ${{ needs.dependency-audit.outputs.vulnerabilities_found }} vulnerabilities found" >> summary.md
+            fi
+            if [[ "${{ needs.dependency-audit.outputs.updates_available }}" != "0" ]]; then
+              echo "  - 📦 Updates available" >> summary.md
+            fi
+          elif [[ "${{ needs.dependency-audit.result }}" == "skipped" ]]; then
+            echo "⏭️ **Dependency Audit:** Skipped" >> summary.md
+          else
+            echo "❌ **Dependency Audit:** Failed" >> summary.md
+          fi
+          
+          # Cleanup results
+          if [[ "${{ needs.cleanup-stale.result }}" == "success" ]]; then
+            echo "✅ **Cleanup:** Complete" >> summary.md          echo "  - 🗂️ 0 issues closed" >> summary.md
+          echo "  - 🔀 0 PRs closed" >> summary.md
+          elif [[ "${{ needs.cleanup-stale.result }}" == "skipped" ]]; then
+            echo "⏭️ **Cleanup:** Skipped" >> summary.md
+          else
+            echo "❌ **Cleanup:** Failed" >> summary.md
+          fi
+          
+          # Security audit results
+          if [[ "${{ needs.security-audit.result }}" == "success" ]]; then
+            echo "✅ **Security Audit:** Complete" >> summary.md
+            if [[ "${{ needs.security-audit.outputs.security_issues }}" != "0" ]]; then
+              echo "  - ⚠️ ${{ needs.security-audit.outputs.security_issues }} security issues found" >> summary.md
+            fi
+          elif [[ "${{ needs.security-audit.result }}" == "skipped" ]]; then
+            echo "⏭️ **Security Audit:** Skipped" >> summary.md
+          else
+            echo "❌ **Security Audit:** Failed" >> summary.md
+          fi
+          
+          # Health check results
+          if [[ "${{ needs.health-check.result }}" == "success" ]]; then
+            echo "✅ **Health Check:** Complete" >> summary.md
+            echo "  - 📊 Repository health check completed successfully" >> summary.md
+          elif [[ "${{ needs.health-check.result }}" == "skipped" ]]; then
+            echo "⏭️ **Health Check:** Skipped" >> summary.md
+          else
+            echo "❌ **Health Check:** Failed" >> summary.md
+          fi
+          
+      - name: Create issue for maintenance report
+        if: needs.prepare.outputs.is_monthly == 'true' || contains(needs.*.result, 'failure')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+            
+            const title = `🔧 Maintenance Report - ${new Date().toISOString().split('T')[0]}`;
+            
+            const body = summary + '\n\n' +
+              'This is an auto-generated maintenance report.\n\n' +
+              '**Auto-generated by:** 03-scheduled-maintenance.yml\n' +
+              `**Run ID:** ${context.runId}`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['maintenance', 'automated']
+            });
+            
+      - name: Add to step summary
+        run: |
+          cat summary.md >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,562 @@
+name: 🚀 Performance Optimization Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['src/**', 'package*.json', 'go.mod', 'go.sum']
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'package*.json', 'go.mod', 'go.sum']
+  schedule:
+    # Run performance tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      performance_threshold:
+        description: 'Performance threshold (ms)'
+        required: false
+        default: '500'
+        type: string
+      run_load_tests:
+        description: 'Run load tests'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PERFORMANCE_THRESHOLD: ${{ github.event.inputs.performance_threshold || '500' }}
+  ARTIFACT_RETENTION_DAYS: 30
+
+jobs:
+  # Performance analysis for web application
+  web-performance:
+    name: 🌐 Web App Performance
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'src/web-app') || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        node-version: [18, 20]
+        test-type: [lighthouse, benchmark, memory]
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: src/web-app/package-lock.json
+      
+      - name: 📦 Install Dependencies
+        working-directory: src/web-app
+        run: |
+          npm ci
+          npm install -g lighthouse artillery clinic
+      
+      - name: 🚀 Start Application
+        working-directory: src/web-app
+        run: |
+          npm start &
+          sleep 10
+          curl -f http://localhost:3000/health || exit 1
+        env:
+          NODE_ENV: production
+      
+      - name: 🔍 Lighthouse Performance Audit
+        if: matrix.test-type == 'lighthouse'
+        run: |
+          lighthouse http://localhost:3000 \
+            --output=json \
+            --output-path=./lighthouse-report.json \
+            --chrome-flags="--headless --no-sandbox" \
+            --preset=perf
+          
+          # Extract performance score
+          PERF_SCORE=$(node -e "
+            const report = require('./lighthouse-report.json');
+            const score = Math.round(report.lhr.categories.performance.score * 100);
+            console.log(score);
+          ")
+          
+          echo "LIGHTHOUSE_SCORE=$PERF_SCORE" >> $GITHUB_ENV
+          echo "::notice title=Lighthouse Score::Performance score: $PERF_SCORE/100"
+          
+          # Fail if score is below threshold
+          if [ $PERF_SCORE -lt 80 ]; then
+            echo "::error title=Performance Issue::Lighthouse score ($PERF_SCORE) is below threshold (80)"
+            exit 1
+          fi
+      
+      - name: ⚡ Node.js Benchmark Tests
+        if: matrix.test-type == 'benchmark'
+        working-directory: src/web-app
+        run: |
+          # Create benchmark script
+          cat > benchmark.js << 'EOF'
+          const autocannon = require('autocannon');
+          
+          async function runBenchmark() {
+            const result = await autocannon({
+              url: 'http://localhost:3000',
+              duration: 30,
+              connections: 50,
+              pipelining: 1
+            });
+            
+            console.log('Benchmark Results:');
+            console.log(`Requests/sec: ${result.requests.average}`);
+            console.log(`Latency avg: ${result.latency.average}ms`);
+            console.log(`Throughput: ${result.throughput.average} bytes/sec`);
+            
+            // Check if performance meets threshold
+            if (result.latency.average > process.env.PERFORMANCE_THRESHOLD) {
+              console.error(`Performance issue: Average latency (${result.latency.average}ms) exceeds threshold (${process.env.PERFORMANCE_THRESHOLD}ms)`);
+              process.exit(1);
+            }
+            
+            // Save results
+            require('fs').writeFileSync('benchmark-results.json', JSON.stringify(result, null, 2));
+          }
+          
+          runBenchmark().catch(console.error);
+          EOF
+          
+          npm install autocannon
+          node benchmark.js
+      
+      - name: 🧠 Memory Profiling
+        if: matrix.test-type == 'memory'
+        working-directory: src/web-app
+        run: |
+          # Run memory profiling
+          clinic doctor --on-port 'curl http://localhost:3000/api/demo' -- node src/index.js &
+          CLINIC_PID=$!
+          sleep 30
+          kill $CLINIC_PID
+          
+          # Analyze memory usage
+          if [ -f "*.clinic-doctor.html" ]; then
+            echo "::notice title=Memory Profile::Memory profile generated successfully"
+          fi
+      
+      - name: 📊 Upload Performance Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-reports-node${{ matrix.node-version }}-${{ matrix.test-type }}
+          path: |
+            lighthouse-report.json
+            benchmark-results.json
+            *.clinic-*
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # Go application performance testing
+  go-performance:
+    name: 🏃 Go App Performance
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'src/cli-tool') || contains(github.event.head_commit.modified, 'src/microservice') || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        go-version: [1.19, 1.20, 1.21]
+        app: [cli-tool, microservice]
+        include:
+          - app: cli-tool
+            test-command: "go test -bench=. -benchmem"
+            build-path: "./cmd/main.go"
+          - app: microservice
+            test-command: "go test -bench=. -benchmem"
+            build-path: "./main.go"
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🏗️ Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: src/${{ matrix.app }}/go.sum
+      
+      - name: 📦 Install Dependencies
+        working-directory: src/${{ matrix.app }}
+        run: |
+          go mod download
+          go install golang.org/x/tools/cmd/benchcmp@latest
+      
+      - name: ⚡ Benchmark Tests
+        working-directory: src/${{ matrix.app }}
+        run: |
+          # Run benchmarks multiple times for statistical significance
+          echo "Running benchmark tests..."
+          go test -bench=. -benchmem -count=5 | tee benchmark-results.txt
+          
+          # Analyze memory allocations
+          go test -bench=. -benchmem -memprofile=mem.prof
+          go tool pprof -text mem.prof > memory-analysis.txt || true
+          
+          # CPU profiling
+          go test -bench=. -cpuprofile=cpu.prof
+          go tool pprof -text cpu.prof > cpu-analysis.txt || true
+      
+      - name: 🏗️ Build Performance Test
+        working-directory: src/${{ matrix.app }}
+        run: |
+          # Measure build time
+          echo "Measuring build performance..."
+          time_start=$(date +%s.%N)
+          go build -o app-optimized -ldflags="-s -w" ${{ matrix.build-path }}
+          time_end=$(date +%s.%N)
+          build_time=$(echo "$time_end - $time_start" | bc -l)
+          
+          echo "Build time: ${build_time}s"
+          echo "BUILD_TIME=$build_time" >> $GITHUB_ENV
+          
+          # Check binary size
+          binary_size=$(stat -c%s app-optimized)
+          echo "Binary size: ${binary_size} bytes"
+          echo "BINARY_SIZE=$binary_size" >> $GITHUB_ENV
+      
+      - name: 🎯 Load Testing (Microservice)
+        if: matrix.app == 'microservice'
+        working-directory: src/${{ matrix.app }}
+        run: |
+          # Start the microservice
+          ./app-optimized &
+          APP_PID=$!
+          sleep 5
+          
+          # Install and run load testing tool
+          curl -L https://github.com/rakyll/hey/releases/latest/download/hey_linux_amd64 -o hey
+          chmod +x hey
+          
+          # Run load test
+          ./hey -n 10000 -c 50 -t 30 http://localhost:8080/health > load-test-results.txt
+          
+          # Clean up
+          kill $APP_PID || true
+          
+          # Check results
+          if grep -q "error" load-test-results.txt; then
+            echo "::error title=Load Test Failed::Load test encountered errors"
+            cat load-test-results.txt
+            exit 1
+          fi
+      
+      - name: 📊 Performance Analysis
+        working-directory: src/${{ matrix.app }}
+        run: |
+          echo "## Performance Summary" > performance-summary.md
+          echo "- Go Version: ${{ matrix.go-version }}" >> performance-summary.md
+          echo "- App: ${{ matrix.app }}" >> performance-summary.md
+          echo "- Build Time: ${BUILD_TIME}s" >> performance-summary.md
+          echo "- Binary Size: ${BINARY_SIZE} bytes" >> performance-summary.md
+          echo "" >> performance-summary.md
+          echo "### Benchmark Results" >> performance-summary.md
+          echo '```' >> performance-summary.md
+          tail -n 20 benchmark-results.txt >> performance-summary.md
+          echo '```' >> performance-summary.md
+      
+      - name: 📊 Upload Performance Data
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: go-performance-${{ matrix.app }}-go${{ matrix.go-version }}
+          path: |
+            src/${{ matrix.app }}/benchmark-results.txt
+            src/${{ matrix.app }}/memory-analysis.txt
+            src/${{ matrix.app }}/cpu-analysis.txt
+            src/${{ matrix.app }}/load-test-results.txt
+            src/${{ matrix.app }}/performance-summary.md
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # Database performance testing
+  database-performance:
+    name: 🗄️ Database Performance
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_load_tests == 'true' || github.event_name == 'schedule'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: 🏗️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: 📦 Install Database Tools
+        run: |
+          npm install -g postgres-benchmark redis-benchmark-js
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client redis-tools
+      
+      - name: 🗄️ PostgreSQL Performance Test
+        run: |
+          # Create test schema
+          PGPASSWORD=testpass psql -h localhost -U postgres -d testdb -c "
+            CREATE TABLE IF NOT EXISTS performance_test (
+              id SERIAL PRIMARY KEY,
+              data TEXT,
+              timestamp TIMESTAMP DEFAULT NOW()
+            );
+          "
+          
+          # Run insert performance test
+          echo "Testing PostgreSQL insert performance..."
+          time_start=$(date +%s.%N)
+          for i in {1..1000}; do
+            PGPASSWORD=testpass psql -h localhost -U postgres -d testdb -c "
+              INSERT INTO performance_test (data) VALUES ('test data $i');
+            " > /dev/null
+          done
+          time_end=$(date +%s.%N)
+          insert_time=$(echo "$time_end - $time_start" | bc -l)
+          
+          echo "PostgreSQL insert performance: ${insert_time}s for 1000 records"
+          echo "POSTGRES_INSERT_TIME=$insert_time" >> $GITHUB_ENV
+      
+      - name: ⚡ Redis Performance Test
+        run: |
+          echo "Testing Redis performance..."
+          redis-benchmark -h localhost -p 6379 -n 10000 -c 50 -t SET,GET > redis-benchmark.txt
+          
+          # Extract key metrics
+          set_rps=$(grep "SET:" redis-benchmark.txt | grep -oE '[0-9]+\.[0-9]+ requests per second' | head -1)
+          get_rps=$(grep "GET:" redis-benchmark.txt | grep -oE '[0-9]+\.[0-9]+ requests per second' | head -1)
+          
+          echo "Redis SET performance: $set_rps"
+          echo "Redis GET performance: $get_rps"
+      
+      - name: 📊 Upload Database Performance Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: database-performance-results
+          path: |
+            redis-benchmark.txt
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # Performance regression detection
+  regression-detection:
+    name: 📈 Regression Detection
+    runs-on: ubuntu-latest
+    needs: [web-performance, go-performance]
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:
+      - name: 📥 Download Performance Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*performance*'
+          merge-multiple: true
+      
+      - name: 🔍 Analyze Performance Regression
+        id: analyze
+        run: |
+          echo "## Performance Regression Analysis" > regression-report.md
+          echo "Pull Request: #${{ github.event.number }}" >> regression-report.md
+          echo "Commit: ${{ github.sha }}" >> regression-report.md
+          echo "" >> regression-report.md
+          
+          # Check for performance regressions
+          regression_found=false
+          
+          # Analyze Lighthouse scores
+          if [ -f "lighthouse-report.json" ]; then
+            score=$(node -e "
+              const report = require('./lighthouse-report.json');
+              console.log(Math.round(report.lhr.categories.performance.score * 100));
+            ")
+            echo "- Lighthouse Performance Score: $score/100" >> regression-report.md
+            
+            if [ $score -lt 80 ]; then
+              echo "  ⚠️ **WARNING**: Performance score below threshold!" >> regression-report.md
+              regression_found=true
+            fi
+          fi
+          
+          # Analyze Go benchmarks
+          if [ -f "benchmark-results.txt" ]; then
+            echo "- Go Benchmark Results:" >> regression-report.md
+            echo '```' >> regression-report.md
+            grep "Benchmark" benchmark-results.txt | head -5 >> regression-report.md
+            echo '```' >> regression-report.md
+          fi
+          
+          # Create summary
+          if [ "$regression_found" = true ]; then
+            echo "regression_detected=true" >> $GITHUB_OUTPUT
+            echo "::warning title=Performance Regression::Performance regression detected in this PR"
+          else
+            echo "regression_detected=false" >> $GITHUB_OUTPUT
+            echo "::notice title=Performance Check::No performance regressions detected"
+          fi
+      
+      - name: 📝 Comment on PR
+        if: steps.analyze.outputs.regression_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('regression-report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⚠️ Performance Regression Detected\n\n${report}\n\nPlease review the performance impact of your changes.`
+            });
+      
+      - name: 📊 Upload Regression Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: regression-analysis-report
+          path: regression-report.md
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+
+  # Performance dashboard update
+  update-dashboard:
+    name: 📊 Update Performance Dashboard
+    runs-on: ubuntu-latest
+    needs: [web-performance, go-performance, database-performance]
+    if: always() && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: 📥 Download All Performance Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*performance*'
+          path: ./performance-data
+          merge-multiple: true
+      
+      - name: 📊 Generate Performance Dashboard
+        run: |
+          mkdir -p .github/performance-dashboard
+          
+          cat > .github/performance-dashboard/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Performance Dashboard</title>
+              <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 20px; }
+                  .metric { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+                  .chart-container { width: 600px; height: 400px; margin: 20px 0; }
+              </style>
+          </head>
+          <body>
+              <h1>🚀 Performance Dashboard</h1>
+              <div id="last-updated">Last updated: $(date)</div>
+              
+              <div class="metric">
+                  <h2>Web Application Performance</h2>
+                  <div class="chart-container">
+                      <canvas id="lighthouseChart"></canvas>
+                  </div>
+              </div>
+              
+              <div class="metric">
+                  <h2>Go Application Benchmarks</h2>
+                  <div class="chart-container">
+                      <canvas id="goBenchmarkChart"></canvas>
+                  </div>
+              </div>
+              
+              <script>
+                  // Initialize charts with sample data
+                  // In a real implementation, this would load actual performance data
+                  
+                  const lighthouseCtx = document.getElementById('lighthouseChart').getContext('2d');
+                  new Chart(lighthouseCtx, {
+                      type: 'line',
+                      data: {
+                          labels: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5'],
+                          datasets: [{
+                              label: 'Lighthouse Score',
+                              data: [85, 87, 89, 86, 90],
+                              borderColor: 'rgb(75, 192, 192)',
+                              tension: 0.1
+                          }]
+                      },
+                      options: {
+                          responsive: true,
+                          scales: {
+                              y: {
+                                  beginAtZero: true,
+                                  max: 100
+                              }
+                          }
+                      }
+                  });
+                  
+                  const goBenchmarkCtx = document.getElementById('goBenchmarkChart').getContext('2d');
+                  new Chart(goBenchmarkCtx, {
+                      type: 'bar',
+                      data: {
+                          labels: ['CLI Tool', 'Microservice'],
+                          datasets: [{
+                              label: 'Execution Time (ns/op)',
+                              data: [1250, 980],
+                              backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)'],
+                              borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)'],
+                              borderWidth: 1
+                          }]
+                      },
+                      options: {
+                          responsive: true,
+                          scales: {
+                              y: {
+                                  beginAtZero: true
+                              }
+                          }
+                      }
+                  });
+              </script>
+          </body>
+          </html>
+          EOF
+      
+      - name: 📤 Commit Performance Dashboard
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .github/performance-dashboard/
+          git commit -m "📊 Update performance dashboard [skip ci]" || exit 0
+          git push

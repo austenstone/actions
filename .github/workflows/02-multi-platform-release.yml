@@ -1,0 +1,352 @@
+name: 02 - Multi-Platform Release Automation
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.2.3)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+      draft:
+        description: 'Create as draft release'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  GO_VERSION: '1.21'
+  
+jobs:
+  # Prepare release information
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+      upload_url: ${{ steps.release.outputs.upload_url }}
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+          
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            echo "Generating changelog from $PREVIOUS_TAG to ${{ steps.version.outputs.version }}"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD)
+          else
+            echo "Generating changelog for initial release"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)")
+          fi
+          
+          # Save changelog to file and output
+          echo "$CHANGELOG" > changelog.md
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+      - name: Create GitHub Release
+        id: release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: Release ${{ steps.version.outputs.version }}
+          body: |
+            ## Changes in ${{ steps.version.outputs.version }}
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## Installation
+            
+            Download the appropriate binary for your platform from the assets below.
+            
+            ### Quick Install
+            ```bash
+            # Linux/macOS
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/cli-tool-linux-amd64 -o cli-tool
+            chmod +x cli-tool
+            
+            # Windows (PowerShell)
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version }}/cli-tool-windows-amd64.exe" -OutFile "cli-tool.exe"
+            ```
+          draft: ${{ github.event.inputs.draft == 'true' }}
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+
+  # Build binaries for multiple platforms
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Linux builds
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            asset_name: cli-tool-linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            asset_name: cli-tool-linux-arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: 386
+            asset_name: cli-tool-linux-386
+          
+          # macOS builds
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            asset_name: cli-tool-darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            asset_name: cli-tool-darwin-arm64
+          
+          # Windows builds
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            asset_name: cli-tool-windows-amd64.exe
+          - os: windows-latest
+            goos: windows
+            goarch: 386
+            asset_name: cli-tool-windows-386.exe
+            
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+            
+      - name: Install dependencies
+        run: |
+          cd src/cli-tool
+          go mod download
+          
+      - name: Run tests
+        run: |
+          cd src/cli-tool
+          go test -v ./...
+          
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          cd src/cli-tool
+          go build -ldflags="-s -w -X main.version=${{ needs.prepare.outputs.version }} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ${{ matrix.asset_name }} .
+          
+      - name: Generate checksums
+        run: |
+          cd src/cli-tool
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            certutil -hashfile ${{ matrix.asset_name }} SHA256 > ${{ matrix.asset_name }}.sha256
+          else
+            shasum -a 256 ${{ matrix.asset_name }} > ${{ matrix.asset_name }}.sha256
+          fi
+          
+      - name: Upload binary to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_path: src/cli-tool/${{ matrix.asset_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
+          
+      - name: Upload checksum to release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_path: src/cli-tool/${{ matrix.asset_name }}.sha256
+          asset_name: ${{ matrix.asset_name }}.sha256
+          asset_content_type: text/plain
+
+  # Create Docker images for multiple architectures
+  docker:
+    name: Build Docker Images
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/cli-tool
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: src/cli-tool
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Publish to package repositories
+  publish:
+    name: Publish Packages
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          
+      - name: Publish to Go proxy
+        run: |
+          cd src/cli-tool
+          GOPROXY=proxy.golang.org go list -m github.com/${{ github.repository }}/src/cli-tool@${{ needs.prepare.outputs.version }}
+          
+      - name: Create Homebrew formula
+        run: |
+          # Download the macOS binary to get its SHA256
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.version }}/cli-tool-darwin-amd64 -o cli-tool-darwin-amd64
+          MAC_SHA256=$(shasum -a 256 cli-tool-darwin-amd64 | cut -d' ' -f1)
+          
+          # Create Homebrew formula template
+          cat > cli-tool.rb << EOF
+          class CliTool < Formula
+            desc "Description of your CLI tool"
+            homepage "https://github.com/${{ github.repository }}"
+            url "https://github.com/${{ github.repository }}/releases/download/${{ needs.prepare.outputs.version }}/cli-tool-darwin-amd64"
+            sha256 "$MAC_SHA256"
+            version "${{ needs.prepare.outputs.version }}"
+          
+            def install
+              bin.install "cli-tool-darwin-amd64" => "cli-tool"
+            end
+          
+            test do
+              system "#{bin}/cli-tool", "--version"
+            end
+          end
+          EOF
+          
+          echo "Homebrew formula created (would need to be submitted to tap repository)"
+
+  # Post-release tasks
+  post-release:
+    name: Post-Release Tasks
+    needs: [prepare, build, docker, publish]
+    runs-on: ubuntu-latest
+    if: always() && !contains(needs.*.result, 'failure')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Update documentation
+        run: |
+          echo "📚 Updating documentation for release ${{ needs.prepare.outputs.version }}"
+          # Update README with new version
+          sed -i "s/Latest version: .*/Latest version: ${{ needs.prepare.outputs.version }}/" README.md
+          
+      - name: Create release summary
+        run: |
+          echo "## 🎉 Release ${{ needs.prepare.outputs.version }} Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Assets Created:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Linux (amd64, arm64, 386)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ macOS (amd64, arm64)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Windows (amd64, 386)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Docker images (multi-arch)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Checksums for all binaries" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Links:" >> $GITHUB_STEP_SUMMARY
+          echo "- [Release Page](https://github.com/${{ github.repository }}/releases/tag/${{ needs.prepare.outputs.version }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Docker Images](https://ghcr.io/${{ github.repository }}/cli-tool)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Changelog:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.prepare.outputs.changelog }}" >> $GITHUB_STEP_SUMMARY
+          
+      - name: Notify team
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Create a comment on the release
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: '${{ needs.prepare.outputs.version }}'
+            });
+            
+            console.log(`Release ${{ needs.prepare.outputs.version }} created successfully!`);
+            console.log(`Release URL: ${release.data.html_url}`);
+            
+            // You could add notifications here (Slack, Teams, etc.)
