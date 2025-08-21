@@ -7,8 +7,6 @@
 * Empower developers, but set governance guardrails (allow/block lists, policies, approval rules).
 * Celebrate wins and tie Actions adoption back to business outcomes (faster releases, reduced infra cost, improved security).
 
----
-
 ## 🛡️ Security Best Practices
 
 * Pin all actions to full SHA hashes (avoid floating tags like `@master`).
@@ -21,8 +19,6 @@
 * Adopt SLSA provenance/attestation (e.g., SLSA 3 build isolation with GHRs).
 * Get security teams involved early; integrate CodeQL and Dependabot into pipelines.
 
----
-
 ## 🏗️ Process & Adoption Practices
 
 * Establish allow/block lists for marketplace actions, with IaC-based governance.
@@ -34,8 +30,6 @@
 * Use CODEOWNERS and rulesets for workflow governance.
 * Optionally restrict access to larger runners via runner groups.
 * Optionally use push rulesets to prevent unauthorized workflow changes.
-
----
 
 ## ⚡ Technical Best Practices
 
@@ -55,8 +49,6 @@
 * Audit slowest jobs, flaky tests, and resource bottlenecks.
 * Prefer GitHub-hosted runners (GHRs) over self-hosted (SHRs) for security, cost, consistency, and scale.
 
----
-
 ## 🔄 Optimization & Growth
 
 * Use Actions usage metrics to identify long-running jobs and high-failure workflows.
@@ -65,8 +57,6 @@
 * Experiment with larger runners for performance vs. cost tradeoffs.
 * Leverage artifact retention policies to manage storage.
 * Continuously refine workflows — initial optimization can come later.
-
----
 
 ## 🆕 Newer Features / Underused Capabilities
 
@@ -82,8 +72,6 @@
 * **Copilot + Actions authoring**: AI-assisted workflow creation.
 * **Visual workflow editor (beta)**: Democratizes authoring for non-YAML experts.
 * **IssueOps / PR comment automation**: Extend beyond CI/CD to governance and triage.
-
----
 
 ## ✅ Summary
 
