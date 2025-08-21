@@ -70,7 +70,6 @@
 * **Private marketplace actions**: Curated internal action catalogs.
 * **Self-hosted runner autoscaling**: Recently improved for enterprises.
 * **Copilot + Actions authoring**: AI-assisted workflow creation.
-* **Visual workflow editor (beta)**: Democratizes authoring for non-YAML experts.
 * **IssueOps / PR comment automation**: Extend beyond CI/CD to governance and triage.
 
 ## ✅ Summary
